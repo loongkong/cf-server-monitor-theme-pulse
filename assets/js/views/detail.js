@@ -51,7 +51,6 @@ const RANGES = [
   { label: '12小时', hours: 12 },
   { label: '24小时', hours: 24 },
   { label: '2天', hours: 48 },
-  { label: '4天', hours: 96 },
   { label: '7天', hours: 168 },
 ];
 
@@ -455,7 +454,8 @@ export async function renderDetail(root, ctx, id) {
   const chartsGrid = el('div', { class: 'charts-grid' });
   const rangeSeg = el('div', { class: 'seg' });
   const rangeBtns = new Map();
-  const visibleRanges = showLongHistory ? RANGES : RANGES.filter((r) => r.hours <= 1);
+  // 官方口径：≤24h 始终展示；48h+ 需要站点开启 show_long_history
+  const visibleRanges = RANGES.filter((r) => r.hours <= 24 || showLongHistory);
   for (const r of visibleRanges) {
     const b = el('button', { class: 'seg-btn', text: r.label, dataset: { hours: String(r.hours) } });
     b.addEventListener('click', () => loadRange(r.hours));
@@ -561,6 +561,12 @@ export async function renderDetail(root, ctx, id) {
   }
 
   async function loadRange(hours) {
+    // 长历史要求登录（hours>1 服务端强制 401）：未登录直接提示，不发必败的请求
+    if (hours > 1 && !localStorage.getItem('token')) {
+      toast('查看 1 小时以上历史需要登录，请在默认主题登录');
+      syncRangeBtns();
+      return;
+    }
     currentHours = hours;
     syncRangeBtns();
     try {
@@ -585,7 +591,7 @@ export async function renderDetail(root, ctx, id) {
   // ----- 组装 -----
   view.textContent = '';
   view.append(backBtn, head, tilesGrid, chartsHead, chartsGrid);
-  loadRange(1);
+  loadRange(0.167);
 
   // ----- WebSocket 实时追加（全局统一 1s tick 回放） -----
   // 全局单一定时器：样本回放与磁贴/图表刷新共用同一个 tick

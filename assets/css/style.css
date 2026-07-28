@@ -1685,11 +1685,16 @@ html[data-theme="light"] .chart-tip {
   }
 
   .cards-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .tiles-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 时间范围按钮 9 个一排太宽，允许换行 */
+  .seg {
+    flex-wrap: wrap;
   }
 
   .ws-pill .ws-pill-text {
