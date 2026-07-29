@@ -345,6 +345,19 @@ button {
   line-height: 1.2;
 }
 
+/* 统计卡：网速固定 10ch 占位，右侧累计流量不随网速波动 */
+.stat-value .stat-speed {
+  display: inline-block;
+  min-width: 10ch;
+}
+
+.stat-value .stat-side {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
 .stat-value em {
   font-style: normal;
   font-size: 13px;
@@ -500,6 +513,12 @@ button {
 
 .srv-card.is-off {
   opacity: 0.62;
+}
+
+/* 隐藏服务器（仅登录可见）：虚线边框 + 降透明度 */
+.srv-card.is-hidden-srv {
+  opacity: 0.75;
+  border-style: dashed;
 }
 
 .srv-card.is-off:hover {

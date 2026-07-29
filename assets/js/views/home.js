@@ -122,6 +122,87 @@ function fillLive(node, d) {
   }
 }
 
+// 剩余价值 = 价格 × min(剩余天数, 周期天数) / 周期天数
+// 需要价格 > 0 且有到期日；已过期返回 'expired'，无法计算返回 null
+const CYCLE_DAYS = {
+  month: 30,
+  quarter: 91,
+  half_year: 182,
+  year: 365,
+  two_years: 730,
+  three_years: 1095,
+  four_years: 1460,
+  five_years: 1825,
+};
+
+// 币种 → 人民币的约算汇率（静态兜底值；每日汇率优先用 loadFxRates 的在线数据）
+const CURRENCY_TO_CNY = {
+  '¥': 1,
+  $: 7.2,
+  '€': 7.8,
+  '£': 9.1,
+  '₽': 0.08,
+  '₣': 8.0,
+  '₹': 0.086,
+  '₫': 0.00028,
+  '฿': 0.2,
+};
+
+const CUR_TO_ISO = {
+  '¥': 'cny',
+  $: 'usd',
+  '€': 'eur',
+  '£': 'gbp',
+  '₽': 'rub',
+  '₣': 'chf',
+  '₹': 'inr',
+  '₫': 'vnd',
+  '฿': 'thb',
+};
+
+const FX_CACHE_KEY = 'pulse_fx_rates';
+const FX_URL = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/cny.json';
+
+let fxRates = CURRENCY_TO_CNY;
+
+// 拉取每日汇率（fawazahmed0/currency-api，jsDelivr CDN 分发，无需 key）；
+// localStorage 缓存 24h，失败或超时用静态兜底值
+async function loadFxRates() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || 'null');
+    if (cached && cached.rates && Date.now() - cached.ts < 86_400_000) {
+      fxRates = cached.rates;
+      return;
+    }
+  } catch {
+    /* 缓存损坏则重新拉取 */
+  }
+  try {
+    const res = await fetch(FX_URL);
+    const data = await res.json();
+    const cny = data && data.cny;
+    if (!cny || typeof cny.usd !== 'number') return;
+    const rates = {};
+    for (const [sym, iso] of Object.entries(CUR_TO_ISO)) {
+      rates[sym] = iso === 'cny' ? 1 : cny[iso] ? 1 / cny[iso] : CURRENCY_TO_CNY[sym] ?? 1;
+    }
+    fxRates = rates;
+    localStorage.setItem(FX_CACHE_KEY, JSON.stringify({ ts: Date.now(), rates }));
+  } catch {
+    /* 离线或接口不可用：沿用兜底值 */
+  }
+}
+
+function remainingValue(d) {
+  const price = parseFloat(d.price);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const days = daysUntil(d.expire_date);
+  if (days == null) return null;
+  if (days < 0) return 'expired';
+  const cycle = CYCLE_DAYS[d.billing_cycle] || 30;
+  return (price * Math.min(days, cycle)) / cycle;
+}
+
 // meta 行：单行 marquee——内容超出时克隆一份，整体左移 -50% 无缝循环
 function marqueeRow(items) {
   const clone = el('span', { class: 'mq-inner', 'aria-hidden': 'true' });
@@ -257,8 +338,10 @@ function barCard(s, sysConfig) {
   const tfUp = arrowIcon('up');
   const tfText = document.createTextNode('');
   const tfChip = el('span', { class: 'tag-chip tf-chip' }, tfDown, tfUp, tfText);
-  // meta 两行：地区/系统/标签/IP 一行，价格/到期/流量包一行；每行溢出各自独立滚动
-  const meta1 = marqueeRow([region, osChip, tagsBox, ips.el]);
+  // meta 两行：地区/系统/标签/IP/隐藏 一行，价格/到期/流量包一行；每行溢出各自独立滚动
+  const hiddenChip = el('span', { class: 'tag-chip warn', text: '隐藏' });
+  hiddenChip.style.display = 'none';
+  const meta1 = marqueeRow([region, osChip, tagsBox, ips.el, hiddenChip]);
   const meta2 = marqueeRow([priceChip, expChip, tfChip]);
   const subRow = el('div', { class: 'srv-sub' }, meta1.el, meta2.el);
   const lastSeen = el('span', { class: 'last-seen dim' });
@@ -330,6 +413,8 @@ function barCard(s, sysConfig) {
   function render(d) {
     const online = isOnline(d);
     card.classList.toggle('is-off', !online);
+    card.classList.toggle('is-hidden-srv', String(d.is_hidden) === '1');
+    hiddenChip.style.display = String(d.is_hidden) === '1' ? '' : 'none';
     dot.className = `status-dot ${online ? 'on' : 'off'}`;
     name.textContent = d.name || '未命名';
 
@@ -458,8 +543,10 @@ function ringCard(s, sysConfig) {
   const tfUp = arrowIcon('up');
   const tfText = document.createTextNode('');
   const tfChip = el('span', { class: 'tag-chip tf-chip' }, tfDown, tfUp, tfText);
-  // meta 两行：地区/系统/标签/IP 一行，价格/到期/流量包一行；每行溢出各自独立滚动
-  const meta1 = marqueeRow([region, osChip, tagsBox, ips.el]);
+  // meta 两行：地区/系统/标签/IP/隐藏 一行，价格/到期/流量包一行；每行溢出各自独立滚动
+  const hiddenChip = el('span', { class: 'tag-chip warn', text: '隐藏' });
+  hiddenChip.style.display = 'none';
+  const meta1 = marqueeRow([region, osChip, tagsBox, ips.el, hiddenChip]);
   const meta2 = marqueeRow([priceChip, expChip, tfChip]);
   const subRow = el('div', { class: 'srv-sub' }, meta1.el, meta2.el);
   const lastSeen = el('span', { class: 'last-seen dim' });
@@ -537,6 +624,8 @@ function ringCard(s, sysConfig) {
   function render(d) {
     const online = isOnline(d);
     card.classList.toggle('is-off', !online);
+    card.classList.toggle('is-hidden-srv', String(d.is_hidden) === '1');
+    hiddenChip.style.display = String(d.is_hidden) === '1' ? '' : 'none';
     dot.className = `status-dot ${online ? 'on' : 'off'}`;
     name.textContent = d.name || '未命名';
     const flag = flagEmoji(d.region);
@@ -634,6 +723,9 @@ function miniCell() {
 function tableRow(s) {
   const dot = el('i', { class: 'status-dot' });
   const nameEl = el('span', { text: s.name || '未命名' });
+  const hiddenChip = el('span', { class: 'tag-chip warn', text: '隐藏' });
+  hiddenChip.style.display = 'none';
+  hiddenChip.style.marginLeft = '6px';
   const osEl = el('span', { class: 't-sub' });
   const regionEl = el('span');
   const cpu = miniCell();
@@ -649,7 +741,7 @@ function tableRow(s) {
   const tr = el(
     'tr',
     { tabindex: '0' },
-    el('td', {}, el('div', { class: 't-name' }, dot, el('div', {}, nameEl, el('div', {}, osEl)))),
+    el('td', {}, el('div', { class: 't-name' }, dot, el('div', {}, el('span', {}, nameEl, hiddenChip), el('div', {}, osEl)))),
     el('td', {}, regionEl),
     el('td', {}, cpu.el),
     el('td', {}, ram.el),
@@ -671,6 +763,7 @@ function tableRow(s) {
   function render(d) {
     const online = isOnline(d);
     tr.classList.toggle('is-off', !online);
+    hiddenChip.style.display = String(d.is_hidden) === '1' ? '' : 'none';
     dot.className = `status-dot ${online ? 'on' : 'off'}`;
     nameEl.textContent = d.name || '未命名';
     osEl.textContent = online ? shortOS(d.os) : timeAgo(d.last_updated);
@@ -791,7 +884,14 @@ export async function renderHome(root, ctx) {
   const statOnline = { v: el('div', { class: 'stat-value mono' }), s: el('div', { class: 'stat-sub' }) };
   const statDown = { v: el('div', { class: 'stat-value mono' }), s: el('div', { class: 'stat-sub' }) };
   const statUp = { v: el('div', { class: 'stat-value mono' }), s: el('div', { class: 'stat-sub' }) };
-  const statMonth = { v: el('div', { class: 'stat-value mono' }), s: el('div', { class: 'stat-sub' }) };
+  const statValue = { v: el('div', { class: 'stat-value mono' }), s: el('div', { class: 'stat-sub' }) };
+  // 下行/上行：网速(固定 10ch 占位) + 右侧累计流量，网速变化不会推动布局
+  const downSpeed = el('span', { class: 'stat-speed', text: '—' });
+  const downTotal = el('span', { class: 'stat-side' });
+  const upSpeed = el('span', { class: 'stat-speed', text: '—' });
+  const upTotal = el('span', { class: 'stat-side' });
+  statDown.v.append(downSpeed, downTotal);
+  statUp.v.append(upSpeed, upTotal);
 
   function statCard(iconNode, label, ref) {
     ref.s.style.display = 'none';
@@ -810,7 +910,7 @@ export async function renderHome(root, ctx) {
     statCard(icon('server'), '在线', statOnline),
     statCard(arrowIcon('down'), '下行', statDown),
     statCard(arrowIcon('up'), '上行', statUp),
-    statCard(icon('pie'), '月流量', statMonth),
+    statCard(icon('card'), '价值', statValue),
   );
 
   const regionStats = payload.regionStats || {};
@@ -965,22 +1065,38 @@ export async function renderHome(root, ctx) {
     let online = 0;
     let speedIn = 0;
     let speedOut = 0;
-    let monthly = 0;
+    let totalRx = 0;
+    let totalTx = 0;
+    let totalValue = 0; // 剩余价值合计（折算人民币）
+    let totalAll = 0; // 总价值合计（全周期价格，折算人民币）
     for (const s of dataMap.values()) {
       if (isOnline(s)) {
         online += 1;
         speedIn += num(s.net_in_speed) || 0;
         speedOut += num(s.net_out_speed) || 0;
       }
-      monthly += (num(s.net_rx_monthly) || 0) + (num(s.net_tx_monthly) || 0);
+      totalRx += num(s.net_rx) || 0;
+      totalTx += num(s.net_tx) || 0;
+      const rate = fxRates[s.currency] ?? 1;
+      const price = parseFloat(s.price);
+      if (Number.isFinite(price) && price > 0) totalAll += price * rate;
+      const rv = remainingValue(s);
+      if (typeof rv === 'number') totalValue += rv * rate;
     }
     statOnline.v.textContent = '';
     statOnline.v.append(`${online}`, el('em', { text: ` / ${dataMap.size}` }));
     statOnline.s.textContent = `${dataMap.size - online} 离线`;
     statOnline.s.style.display = dataMap.size - online > 0 ? '' : 'none';
-    statDown.v.textContent = fmtSpeed(speedIn);
-    statUp.v.textContent = fmtSpeed(speedOut);
-    statMonth.v.textContent = fmtBytes(monthly);
+    downSpeed.textContent = fmtSpeed(speedIn);
+    downTotal.textContent = `共 ${fmtBytes(totalRx)}`;
+    upSpeed.textContent = fmtSpeed(speedOut);
+    upTotal.textContent = `共 ${fmtBytes(totalTx)}`;
+    statValue.v.textContent = '';
+    if (totalAll > 0) {
+      statValue.v.append(`¥${totalValue.toFixed(0)}`, el('em', { text: ` / ¥${totalAll.toFixed(0)}` }));
+    } else {
+      statValue.v.textContent = '—';
+    }
   }
 
   // ----- WebSocket 实时更新（全局统一 1s tick 回放） -----
@@ -1039,6 +1155,8 @@ export async function renderHome(root, ctx) {
   view.append(statsGrid, regionRow, toolbar, groupsBox);
   renderList();
   refreshStats();
+  // 在线汇率就绪后刷新一次剩余价值（缓存命中时同步返回）
+  loadFxRates().then(refreshStats);
 
   playback.start();
 

@@ -265,6 +265,7 @@ export async function renderDetail(root, ctx, id) {
     if (d.os) chips.push(d.os);
     if (d.arch) chips.push(d.arch);
     if (d.agent_version) chips.push(`Agent v${d.agent_version}`);
+    if (String(d.is_hidden) === '1') chips.push('隐藏');
     chips.push(online ? '在线' : `离线 · ${timeAgo(d.last_updated)}`);
     chips.forEach((t, i) =>
       chipRow.append(el('span', { class: `chip${i === chips.length - 1 && online ? ' accent' : ''}`, text: t })),
