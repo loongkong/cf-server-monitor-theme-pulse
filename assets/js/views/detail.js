@@ -28,7 +28,7 @@ import {
   timeAgo,
   toast,
 } from '../utils.js';
-import {getHistory, getServer, getServers} from '../api.js';
+import {getAuthToken, getHistory, getServer, getServers} from '../api.js';
 import {Playback} from '../playback.js';
 import {MetricSocket} from '../ws.js';
 import {LineChart} from '../charts.js';
@@ -563,7 +563,7 @@ export async function renderDetail(root, ctx, id) {
 
   async function loadRange(hours) {
     // 长历史要求登录（hours>1 服务端强制 401）：未登录直接提示，不发必败的请求
-    if (hours > 1 && !localStorage.getItem('token')) {
+    if (hours > 1 && !getAuthToken()) {
       toast('查看 1 小时以上历史需要登录，请在默认主题登录');
       syncRangeBtns();
       return;

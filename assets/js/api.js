@@ -53,14 +53,19 @@ function clearCred() {
   }
 }
 
+// 管理端登录的 JWT 存储键（与官方默认主题一致：jwt_token；token 为旧键兜底）
+export function getAuthToken() {
+  try {
+    return localStorage.getItem('jwt_token') || localStorage.getItem('token');
+  } catch {
+    return null;
+  }
+}
+
 function authHeaders() {
   const headers = {};
-  try {
-    const token = localStorage.getItem('token');
-    if (token) headers.Authorization = `Bearer ${token}`;
-  } catch {
-    /* ignore */
-  }
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (_turnstileCred) headers['X-Turnstile-Verified'] = _turnstileCred;
   return headers;
 }
@@ -107,12 +112,8 @@ function loadTurnstileScript() {
 
 async function exchangeTurnstile(token) {
   const headers = { 'X-Turnstile-Token': token };
-  try {
-    const jwt = localStorage.getItem('token');
-    if (jwt) headers.Authorization = `Bearer ${jwt}`;
-  } catch {
-    /* ignore */
-  }
+  const jwt = getAuthToken();
+  if (jwt) headers.Authorization = `Bearer ${jwt}`;
   const res = await fetch(`${API_BASE}/api/config`, { headers });
   if (!res.ok) throw await toError(res);
   const data = await res.json();
