@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "themes": [
+    {
+      "id": "pulse",
+      "title": "Pulse",
+      "cover": "https://raw.githubusercontent.com/loongkong/cf-server-monitor-theme-pulse/main/docs/preview.svg",
+      "tags": ["Pulse", "Minimal", "Mono"],
+      "description": {
+        "zh-CN": "极简风格的 CF Server Monitor 主题。秒级全局节拍驱动实时数据，卡片/圆环/表格三种模式，支持价格、到期、流量包与剩余价值展示。",
+        "en": "A minimal CF Server Monitor theme. Realtime data on a unified 1s tick, bar/ring/table card modes, with price, expiry, traffic quota and remaining-value display."
+      },
+      "url": "https://github.com/loongkong/cf-server-monitor-theme-pulse",
+      "branch": "main",
+      "author": "loongkong",
+      "versions": [
+        {
+          "version": "v1.0.3",
+          "commitid": "b87ca80987d7e23098d5d251f11b94f8f8c8a3ec",
+          "releaseDate": "2026-07-30",
+          "changelog": "修正管理端 JWT 读取键名，统一鉴权链路"
+        },
+        {
+          "version": "v1.0.2",
+          "commitid": "3042e30db6ddfbf1444f46485c9bb7a7f1734157",
+          "releaseDate": "2026-07-29",
+          "changelog": "顶部统计卡重构（累计流量、价值卡 + 在线汇率），新增隐藏服务器标识"
+        },
+        {
+          "version": "v1.0.1",
+          "commitid": "4134fa89eeb3f860abe1cb2f1b6fbff8a9e2e805",
+          "releaseDate": "2026-07-28",
+          "changelog": "详情页时间范围门槛对齐官方，修复移动端布局溢出"
+        },
+        {
+          "version": "v1.0.0",
+          "commitid": "4160ab8e870a5eddd7f8e5a230213c9a8457d3af",
+          "releaseDate": "2026-07-28",
+          "changelog": "Pulse 主题初始版本：实时回放对齐官方，三种卡片模式，详情页图表"
+        }
+      ]
+    }
+  ]
+}
