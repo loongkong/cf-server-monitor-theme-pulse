@@ -5,7 +5,7 @@ import {
   billingText,
   daysUntil,
   el,
-  flagEmoji,
+  flagImg,
   fmtBytes,
   fmtClock,
   fmtDateTime,
@@ -14,8 +14,10 @@ import {
   fmtSpeed,
   fmtUptime,
   icon,
+  ipReachable,
   isOnline,
   num,
+  osIconImg,
   parseGPU,
   parseTrafficLimit,
   pct,
@@ -27,9 +29,11 @@ import {
   svg,
   timeAgo,
   toast,
+  updateFlagImg,
+  updateOsIconImg,
 } from '../utils.js';
 import {getAuthToken, getHistory, getServer, getServers} from '../api.js';
-import {Playback} from '../playback.js';
+import {Playback, normalizeTs} from '../playback.js';
 import {MetricSocket} from '../ws.js';
 import {LineChart} from '../charts.js';
 
@@ -253,6 +257,12 @@ export async function renderDetail(root, ctx, id) {
   const headDot = el('i', { class: 'status-dot' });
   const titleEl = el('h2', { class: 'detail-title' });
   const chipRow = el('div', { class: 'chip-row' });
+  const regionImg = flagImg(null);
+  const regionText = document.createTextNode('');
+  const regionChip = el('span', {}, regionImg, regionText);
+  const osIcon = osIconImg(null);
+  const osChipText = document.createTextNode('');
+  const osChipNode = el('span', {}, osIcon, osChipText);
 
   function renderHead(d) {
     const online = isOnline(d);
@@ -261,15 +271,29 @@ export async function renderDetail(root, ctx, id) {
     chipRow.textContent = '';
     const chips = [];
     if (d.server_group) chips.push(d.server_group);
-    if (d.region) chips.push(`${flagEmoji(d.region) || '🌐'} ${d.region}`);
-    if (d.os) chips.push(d.os);
+    if (d.region) {
+      updateFlagImg(regionImg, d.region);
+      regionText.nodeValue = ` ${d.region}`;
+      chips.push(regionChip);
+    }
+    if (d.os) {
+      updateOsIconImg(osIcon, d.os);
+      osChipText.nodeValue = ` ${d.os}`;
+      chips.push(osChipNode);
+    }
     if (d.arch) chips.push(d.arch);
     if (d.agent_version) chips.push(`Agent v${d.agent_version}`);
     if (String(d.is_hidden) === '1') chips.push('隐藏');
     chips.push(online ? '在线' : `离线 · ${timeAgo(d.last_updated)}`);
-    chips.forEach((t, i) =>
-      chipRow.append(el('span', { class: `chip${i === chips.length - 1 && online ? ' accent' : ''}`, text: t })),
-    );
+    chips.forEach((t, i) => {
+      const cls = `chip${i === chips.length - 1 && online ? ' accent' : ''}`;
+      if (typeof t === 'string') {
+        chipRow.append(el('span', { class: cls, text: t }));
+      } else {
+        t.className = cls;
+        chipRow.append(t);
+      }
+    });
     // 实时时间芯片（对齐官方 dataTimeText）
     // lag = display_ts - sample_ts；display_ts 为展示时钟，在线时随 wall clock
     // 每秒前进，(+Ns) 随之增长，下一个样本应用时回落
@@ -399,10 +423,10 @@ export async function renderDetail(root, ctx, id) {
     tUptime.set(fmtUptime(d.boot_time),
       d.boot_time ? `启动于 ${fmtDateTime(num(d.boot_time))}` : '');
 
-    ipV4.className = `ip-badge${String(d.ip_v4) === '1' ? ' ok' : ''}`;
-    ipV4.textContent = `IPv4 ${String(d.ip_v4) === '1' ? '可达' : '不可达'}`;
-    ipV6.className = `ip-badge${String(d.ip_v6) === '1' ? ' ok' : ''}`;
-    ipV6.textContent = `IPv6 ${String(d.ip_v6) === '1' ? '可达' : '不可达'}`;
+    ipV4.className = `ip-badge${ipReachable(d.ip_v4) ? ' ok' : ''}`;
+    ipV4.textContent = `IPv4 ${ipReachable(d.ip_v4) ? '可达' : '不可达'}`;
+    ipV6.className = `ip-badge${ipReachable(d.ip_v6) ? ' ok' : ''}`;
+    ipV6.textContent = `IPv6 ${ipReachable(d.ip_v6) ? '可达' : '不可达'}`;
 
     for (const c of pingCells) {
       c.ref.set(d[`ping_${c.key}`], d[`loss_${c.key}`]);
@@ -638,8 +662,21 @@ export async function renderDetail(root, ctx, id) {
     },
     { isOnline: () => isOnline(srv) },
   );
-  // 以 /api/server 已合并的指标时间为种子，避免首批实时消息重复回放已展示数据
-  playback.seed(id, srv.sample_ts ?? srv.sample_timestamp ?? srv.last_updated);
+  // 以 /api/server 已合并的指标时间为种子，避免首批实时消息重复回放已展示数据；
+  // 同时让时间芯片立即显示（对齐首页 seed 行为）
+  const seedTs = normalizeTs(srv.sample_ts ?? srv.sample_timestamp ?? srv.last_updated, null);
+  if (seedTs) {
+    playback.seed(id, seedTs);
+    srv.sample_ts = seedTs;
+    srv.display_ts = seedTs;
+  }
+  // 详情页初始回放：/api/server 返回的 latestReportUpdates（对齐官方 2ec4518）
+  for (const u of srv.latestReportUpdates || []) {
+    playback.queue(u.serverId, u.samples, u.reportTs, {
+      replayCachedReport: true,
+      reportAgeMs: u.reportAgeMs,
+    });
+  }
   playback.start();
 
   const socket = new MetricSocket({

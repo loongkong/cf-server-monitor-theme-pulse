@@ -159,6 +159,11 @@ export function isOnline(s) {
   return !!t && Date.now() - t < ONLINE_WINDOW;
 }
 
+/** IP 可达性：兼容旧格式 "1"/"0" 与新格式（真实公网 IP 字符串 / "0"） */
+export function ipReachable(v) {
+  return v != null && String(v) !== '' && String(v) !== '0';
+}
+
 /** ping 字段可能是 number | null | false（false = 禁用该节点） */
 export function pingState(v) {
   if (v === false || v === 'false') return { kind: 'disabled', value: null };
@@ -247,12 +252,105 @@ export function osName(os) {
   return m && !name.includes(m[0]) ? `${name} ${m[0]}` : name;
 }
 
-/** ISO 两字母区域码 → 旗帜 emoji */
-export function flagEmoji(cc) {
-  if (!cc || typeof cc !== 'string') return '';
-  const code = cc.trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(code)) return '';
-  return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+/** OS 图标：/os-icons/<file> 由后端默认皮肤提供；关键字匹配对齐官方 osIcon.js，
+ *  注意特殊文件名（os-kail / os-openSUSE / os-manjaro-）与大小写 */
+const OS_ICON_RULES = [
+  ['almalinux', 'os-alma.svg'],
+  ['alpine', 'os-alpine.webp'],
+  ['centos', 'os-centos.svg'],
+  ['debian', 'os-debian.svg'],
+  ['ubuntu', 'os-ubuntu.svg'],
+  ['elementary', 'os-ubuntu.svg'],
+  ['macos', 'os-macos.svg'],
+  ['mac os', 'os-macos.svg'],
+  ['darwin', 'os-macos.svg'],
+  ['windows', 'os-windows.svg'],
+  ['microsoft', 'os-windows.svg'],
+  ['arch', 'os-arch.svg'],
+  ['kali', 'os-kail.svg'],
+  ['istore', 'os-istore.png'],
+  ['openwrt', 'os-openwrt.svg'],
+  ['immortalwrt', 'os-openwrt.svg'],
+  ['qwrt', 'os-openwrt.svg'],
+  ['nixos', 'os-nix.svg'],
+  ['rocky', 'os-rocky.svg'],
+  ['fedora', 'os-fedora.svg'],
+  ['opensuse', 'os-openSUSE.svg'],
+  ['suse', 'os-openSUSE.svg'],
+  ['gentoo', 'os-gentoo.svg'],
+  ['redhat', 'os-redhat.svg'],
+  ['rhel', 'os-redhat.svg'],
+  ['mint', 'os-mint.svg'],
+  ['manjaro', 'os-manjaro-.svg'],
+  ['armbian', 'os-armbian.png'],
+  ['synology', 'os-synology.ico'],
+  ['dsm', 'os-synology.ico'],
+  ['proxmox', 'os-proxmox.ico'],
+  ['alibaba', 'os-alibaba.svg'],
+  ['aliyun', 'os-alibaba.svg'],
+  ['anolis', 'os-alibaba.svg'],
+  ['龙蜥', 'os-alibaba.svg'],
+  ['opencloud', 'os-opencloud.svg'],
+  ['oracle', 'os-oracle.svg'],
+];
+
+function osIconFile(os) {
+  const s = String(os || '').toLowerCase().trim();
+  if (!s) return null;
+  for (const [kw, file] of OS_ICON_RULES) {
+    if (s.includes(kw)) return file;
+  }
+  return 'os-unknown.svg';
+}
+
+export function osIconImg(os) {
+  const img = el('img', { class: 'os-img', alt: '', loading: 'lazy' });
+  img.onerror = () => {
+    img.style.display = 'none';
+  };
+  updateOsIconImg(img, os);
+  return img;
+}
+
+/** 更新 OS 图标；无 OS 数据时隐藏 */
+export function updateOsIconImg(img, os) {
+  const file = osIconFile(os);
+  if (file) {
+    img.style.display = '';
+    const src = `/os-icons/${file}`;
+    if (!img.src.endsWith(src)) img.src = src;
+  } else {
+    img.style.display = 'none';
+  }
+}
+
+/** 旗帜 <img>：/flags/<cc>.svg 由后端默认皮肤提供（Windows 无国旗 emoji，不能用字符）。
+ *  文件名小写（大写会命中 SPA 兜底返回 HTML）；TW 沿用官方的 cn 映射 */
+function flagFile(cc) {
+  const code = String(cc || '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(code)) return null;
+  return code === 'TW' ? 'cn' : code.toLowerCase();
+}
+
+export function flagImg(cc) {
+  const img = el('img', { class: 'flag-img', alt: String(cc || '').toUpperCase(), loading: 'lazy' });
+  img.onerror = () => {
+    img.style.display = 'none';
+  };
+  updateFlagImg(img, cc);
+  return img;
+}
+
+/** 更新旗帜图片；非法区域码时隐藏 */
+export function updateFlagImg(img, cc) {
+  const file = flagFile(cc);
+  if (file) {
+    img.style.display = '';
+    const src = `/flags/${file}.svg`;
+    if (!img.src.endsWith(src)) img.src = src;
+  } else {
+    img.style.display = 'none';
+  }
 }
 
 /** gpu_info 兼容数组 / JSON 字符串 / null */

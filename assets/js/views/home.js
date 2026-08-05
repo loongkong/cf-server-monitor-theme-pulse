@@ -1,4 +1,4 @@
-// 首页视图：全局统计 + 分组服务器卡片（进度条 / 圆环 / 表格三种模式）
+// 首页视图：全局统计 + 分组服务器卡片（条形 / 圆环 / 表格三种模式）
 // 数据来源：GET /api/servers；实时更新：/api/ws (subscribe=all)
 
 import {
@@ -7,15 +7,17 @@ import {
   daysUntil,
   debounce,
   el,
-  flagEmoji,
+  flagImg,
   fmtBytes,
   fmtClock,
   fmtMB,
   fmtSpeed,
   fmtUptime,
   icon,
+  ipReachable,
   isOnline,
   num,
+  osIconImg,
   osName,
   parseTrafficLimit,
   pct,
@@ -26,12 +28,14 @@ import {
   stateBlock,
   svg,
   timeAgo,
+  updateFlagImg,
+  updateOsIconImg,
 } from '../utils.js';
 import {getServers} from '../api.js';
 import {Playback, normalizeTs} from '../playback.js';
 import {MetricSocket} from '../ws.js';
 
-const MODE_LABELS = { bar: '进度条', ring: '圆环', table: '表格' };
+const MODE_LABELS = { bar: '条形', ring: '圆环', table: '表格' };
 
 function levelClass(p) {
   if (p == null) return '';
@@ -69,7 +73,7 @@ function arrowIcon(dir) {
   );
 }
 
-// ---------- 进度条卡片 ----------
+// ---------- 条形卡片 ----------
 
 function meterRow(label) {
   const fill = el('i', { class: 'meter-fill' });
@@ -312,11 +316,11 @@ function ipBadges() {
     update(d) {
       box.textContent = '';
       let n = 0;
-      if (String(d.ip_v4) === '1') {
+      if (ipReachable(d.ip_v4)) {
         box.append(el('span', { class: 'tag-chip ip-chip', text: 'IPv4' }));
         n += 1;
       }
-      if (String(d.ip_v6) === '1') {
+      if (ipReachable(d.ip_v6)) {
         box.append(el('span', { class: 'tag-chip ip-chip', text: 'IPv6' }));
         n += 1;
       }
@@ -328,8 +332,12 @@ function ipBadges() {
 function barCard(s, sysConfig) {
   const dot = el('i', { class: 'status-dot' });
   const name = el('h3', { class: 'srv-name' });
-  const region = el('span', { class: 'tag-chip region-chip' });
-  const osChip = el('span', { class: 'tag-chip' });
+  const regionImg = flagImg(null);
+  const regionText = document.createTextNode('');
+  const region = el('span', { class: 'tag-chip region-chip' }, regionImg, regionText);
+  const osImg = osIconImg(null);
+  const osText = document.createTextNode('');
+  const osChip = el('span', { class: 'tag-chip' }, osImg, osText);
   const tagsBox = el('span', { class: 'tag-box' });
   const ips = ipBadges();
   const priceChip = el('span', { class: 'tag-chip' });
@@ -362,6 +370,40 @@ function barCard(s, sysConfig) {
   const liveLag = el('span', { class: 'bt-lag' });
   const liveSmp = el('span', { class: 'bt-item mono' }, liveSmpText, liveLag);
 
+  const infoBox = el(
+    'div',
+    { class: 'srv-info' },
+    el(
+      'div',
+      { class: 'info-row' },
+      el('span', { class: 'info-label', text: '负载' }),
+      load.el,
+    ),
+    el(
+      'div',
+      { class: 'info-row' },
+      el('span', { class: 'info-label', text: '网络' }),
+      el('span', { class: 'net-item' }, arrowIcon('down'), downV),
+      el('span', { class: 'net-item' }, arrowIcon('up'), upV),
+    ),
+    el(
+      'div',
+      { class: 'info-row' },
+      el('span', { class: 'info-label', text: '流量' }),
+      el('span', { class: 'net-item' }, arrowIcon('down'), trfDownV),
+      el('span', { class: 'net-item' }, arrowIcon('up'), trfUpV),
+    ),
+  );
+  // 实时数据区：离线时整体盖遮罩（静态信息不受影响）
+  const liveZone = el(
+    'div',
+    { class: 'srv-live' },
+    el('div', { class: 'srv-meters' }, cpu.el, ram.el, disk.el),
+    infoBox,
+    pings.el,
+    el('div', { class: 'srv-bottom' }, up, liveRep, liveSmp),
+  );
+
   const card = el(
     'article',
     { class: 'srv-card', tabindex: '0', role: 'link' },
@@ -373,33 +415,7 @@ function barCard(s, sysConfig) {
       lastSeen,
     ),
     subRow,
-    el('div', { class: 'srv-meters' }, cpu.el, ram.el, disk.el),
-    el(
-      'div',
-      { class: 'srv-info' },
-      el(
-        'div',
-        { class: 'info-row' },
-        el('span', { class: 'info-label', text: '负载' }),
-        load.el,
-      ),
-      el(
-        'div',
-        { class: 'info-row' },
-        el('span', { class: 'info-label', text: '网络' }),
-        el('span', { class: 'net-item' }, arrowIcon('down'), downV),
-        el('span', { class: 'net-item' }, arrowIcon('up'), upV),
-      ),
-      el(
-        'div',
-        { class: 'info-row' },
-        el('span', { class: 'info-label', text: '流量' }),
-        el('span', { class: 'net-item' }, arrowIcon('down'), trfDownV),
-        el('span', { class: 'net-item' }, arrowIcon('up'), trfUpV),
-      ),
-    ),
-    pings.el,
-    el('div', { class: 'srv-bottom' }, up, liveRep, liveSmp),
+    liveZone,
   );
 
   const go = () => {
@@ -418,11 +434,12 @@ function barCard(s, sysConfig) {
     dot.className = `status-dot ${online ? 'on' : 'off'}`;
     name.textContent = d.name || '未命名';
 
-    const flag = flagEmoji(d.region);
-    region.textContent = flag ? `${flag} ${d.region}` : d.region || '';
+    updateFlagImg(regionImg, d.region);
+    regionText.nodeValue = d.region || '';
     region.style.display = d.region ? '' : 'none';
     const osn = osName(d.os);
-    osChip.textContent = osn;
+    updateOsIconImg(osImg, d.os);
+    osText.nodeValue = osn;
     osChip.title = d.os || '';
     osChip.style.display = osn ? '' : 'none';
     // 价格 / 到期（站点开关控制；到期 ≤7 天变黄、已过期变红）
@@ -533,8 +550,12 @@ function ringGauge() {
 function ringCard(s, sysConfig) {
   const dot = el('i', { class: 'status-dot' });
   const name = el('h3', { class: 'srv-name' });
-  const region = el('span', { class: 'tag-chip region-chip' });
-  const osChip = el('span', { class: 'tag-chip' });
+  const regionImg = flagImg(null);
+  const regionText = document.createTextNode('');
+  const region = el('span', { class: 'tag-chip region-chip' }, regionImg, regionText);
+  const osImg = osIconImg(null);
+  const osText = document.createTextNode('');
+  const osChip = el('span', { class: 'tag-chip' }, osImg, osText);
   const tagsBox = el('span', { class: 'tag-box' });
   const ips = ipBadges();
   const priceChip = el('span', { class: 'tag-chip' });
@@ -567,6 +588,46 @@ function ringCard(s, sysConfig) {
   const liveLag = el('span', { class: 'bt-lag' });
   const liveSmp = el('span', { class: 'bt-item mono' }, liveSmpText, liveLag);
 
+  const infoBox = el(
+    'div',
+    { class: 'srv-info' },
+    el(
+      'div',
+      { class: 'info-row' },
+      el('span', { class: 'info-label', text: '负载' }),
+      load.el,
+    ),
+    el(
+      'div',
+      { class: 'info-row' },
+      el('span', { class: 'info-label', text: '网络' }),
+      el('span', { class: 'net-item' }, arrowIcon('down'), downV),
+      el('span', { class: 'net-item' }, arrowIcon('up'), upV),
+    ),
+    el(
+      'div',
+      { class: 'info-row' },
+      el('span', { class: 'info-label', text: '流量' }),
+      el('span', { class: 'net-item' }, arrowIcon('down'), trfDownV),
+      el('span', { class: 'net-item' }, arrowIcon('up'), trfUpV),
+    ),
+  );
+  // 实时数据区：离线时整体盖遮罩（静态信息不受影响）
+  const liveZone = el(
+    'div',
+    { class: 'srv-live' },
+    el(
+      'div',
+      { class: 'ring-row' },
+      el('div', { class: 'ring-item' }, cpu.el, el('span', { class: 'ring-label', text: 'CPU' })),
+      el('div', { class: 'ring-item' }, ram.el, el('span', { class: 'ring-label', text: '内存' })),
+      el('div', { class: 'ring-item' }, disk.el, el('span', { class: 'ring-label', text: '磁盘' })),
+    ),
+    infoBox,
+    pings.el,
+    el('div', { class: 'srv-bottom' }, up, liveRep, liveSmp),
+  );
+
   const card = el(
     'article',
     { class: 'srv-card', tabindex: '0', role: 'link' },
@@ -578,39 +639,7 @@ function ringCard(s, sysConfig) {
       lastSeen,
     ),
     subRow,
-    el(
-      'div',
-      { class: 'ring-row' },
-      el('div', { class: 'ring-item' }, cpu.el, el('span', { class: 'ring-label', text: 'CPU' })),
-      el('div', { class: 'ring-item' }, ram.el, el('span', { class: 'ring-label', text: '内存' })),
-      el('div', { class: 'ring-item' }, disk.el, el('span', { class: 'ring-label', text: '磁盘' })),
-    ),
-    el(
-      'div',
-      { class: 'srv-info' },
-      el(
-        'div',
-        { class: 'info-row' },
-        el('span', { class: 'info-label', text: '负载' }),
-        load.el,
-      ),
-      el(
-        'div',
-        { class: 'info-row' },
-        el('span', { class: 'info-label', text: '网络' }),
-        el('span', { class: 'net-item' }, arrowIcon('down'), downV),
-        el('span', { class: 'net-item' }, arrowIcon('up'), upV),
-      ),
-      el(
-        'div',
-        { class: 'info-row' },
-        el('span', { class: 'info-label', text: '流量' }),
-        el('span', { class: 'net-item' }, arrowIcon('down'), trfDownV),
-        el('span', { class: 'net-item' }, arrowIcon('up'), trfUpV),
-      ),
-    ),
-    pings.el,
-    el('div', { class: 'srv-bottom' }, up, liveRep, liveSmp),
+    liveZone,
   );
 
   const go = () => {
@@ -628,11 +657,12 @@ function ringCard(s, sysConfig) {
     hiddenChip.style.display = String(d.is_hidden) === '1' ? '' : 'none';
     dot.className = `status-dot ${online ? 'on' : 'off'}`;
     name.textContent = d.name || '未命名';
-    const flag = flagEmoji(d.region);
-    region.textContent = flag ? `${flag} ${d.region}` : d.region || '';
+    updateFlagImg(regionImg, d.region);
+    regionText.nodeValue = d.region || '';
     region.style.display = d.region ? '' : 'none';
     const osn = osName(d.os);
-    osChip.textContent = osn;
+    updateOsIconImg(osImg, d.os);
+    osText.nodeValue = osn;
     osChip.title = d.os || '';
     osChip.style.display = osn ? '' : 'none';
     // 价格 / 到期（站点开关控制；到期 ≤7 天变黄、已过期变红）
@@ -726,8 +756,12 @@ function tableRow(s) {
   const hiddenChip = el('span', { class: 'tag-chip warn', text: '隐藏' });
   hiddenChip.style.display = 'none';
   hiddenChip.style.marginLeft = '6px';
-  const osEl = el('span', { class: 't-sub' });
-  const regionEl = el('span');
+  const osIcon = osIconImg(null);
+  const osText = document.createTextNode('');
+  const osEl = el('span', { class: 't-sub' }, osIcon, osText);
+  const regionImg = flagImg(null);
+  const regionText = document.createTextNode('');
+  const regionEl = el('span', {}, regionImg, regionText);
   const cpu = miniCell();
   const ram = miniCell();
   const disk = miniCell();
@@ -766,9 +800,10 @@ function tableRow(s) {
     hiddenChip.style.display = String(d.is_hidden) === '1' ? '' : 'none';
     dot.className = `status-dot ${online ? 'on' : 'off'}`;
     nameEl.textContent = d.name || '未命名';
-    osEl.textContent = online ? shortOS(d.os) : timeAgo(d.last_updated);
-    const flag = flagEmoji(d.region);
-    regionEl.textContent = flag ? `${flag} ${d.region}` : d.region || '—';
+    osText.nodeValue = online ? ` ${shortOS(d.os)}` : timeAgo(d.last_updated);
+    updateOsIconImg(osIcon, online ? d.os : null);
+    updateFlagImg(regionImg, d.region);
+    regionText.nodeValue = d.region ? ` ${d.region}` : '—';
     cpu.set(num(d.cpu));
     ram.set(pct(d.ram_used, d.ram_total));
     disk.set(pct(d.disk_used, d.disk_total));
@@ -918,7 +953,7 @@ export async function renderHome(root, ctx) {
     'div',
     { class: 'regions-row' },
     Object.entries(regionStats).map(([cc, n]) =>
-      el('span', { class: 'region-chip' }, `${flagEmoji(cc) || '🌐'} ${cc} · ${n}`),
+      el('span', { class: 'region-chip' }, flagImg(cc), document.createTextNode(` ${cc} · ${n}`)),
     ),
   );
   regionRow.style.display = Object.keys(regionStats).length ? '' : 'none';

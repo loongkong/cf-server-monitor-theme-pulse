@@ -511,18 +511,44 @@ button {
   box-shadow: var(--shadow);
 }
 
-.srv-card.is-off {
-  opacity: 0.62;
+/* 实时数据区：离线时盖遮罩（头部与 meta 静态信息保持清晰） */
+.srv-live {
+  position: relative;
+}
+
+.srv-card.is-off .srv-live::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  backdrop-filter: blur(1.5px);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* 遮罩中央的离线徽标 */
+.srv-card.is-off .srv-live::after {
+  content: "已离线";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 4px 14px;
+  border-radius: 99px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  color: var(--dim);
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  z-index: 3;
+  pointer-events: none;
 }
 
 /* 隐藏服务器（仅登录可见）：虚线边框 + 降透明度 */
 .srv-card.is-hidden-srv {
   opacity: 0.75;
   border-style: dashed;
-}
-
-.srv-card.is-off:hover {
-  opacity: 0.85;
 }
 
 .srv-head {
@@ -607,6 +633,24 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* 旗帜图片（/flags/<cc>.svg，替代 Windows 不支持的国旗 emoji） */
+.flag-img {
+  width: 14px;
+  height: 10px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* OS 图标（/os-icons/<file>） */
+.os-img {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex: none;
+  vertical-align: -2px;
 }
 
 .region-chip,
