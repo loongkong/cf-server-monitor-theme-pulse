@@ -139,22 +139,21 @@ const CYCLE_DAYS = {
   five_years: 1825,
 };
 
-// 币种 → 人民币的约算汇率（静态兜底值；每日汇率优先用 loadFxRates 的在线数据）
-const CURRENCY_TO_CNY = {
-  '¥': 1,
-  $: 7.2,
-  '€': 7.8,
-  '£': 9.1,
-  '₽': 0.08,
-  '₣': 8.0,
-  '₹': 0.086,
-  '₫': 0.00028,
-  '฿': 0.2,
-};
-
-const CUR_TO_ISO = {
+// 货币符号 → ISO 代码（$ 默认美元；C$/A$/HK$/NT$ 等区分开；别名参考官方 finance.js）
+const SYMBOL_TO_ISO = {
   '¥': 'cny',
+  '￥': 'cny',
+  RMB: 'cny',
   $: 'usd',
+  US$: 'usd',
+  'C$': 'cad',
+  'CA$': 'cad',
+  'A$': 'aud',
+  'AU$': 'aud',
+  'NZ$': 'nzd',
+  'HK$': 'hkd',
+  'NT$': 'twd',
+  'S$': 'sgd',
   '€': 'eur',
   '£': 'gbp',
   '₽': 'rub',
@@ -162,38 +161,87 @@ const CUR_TO_ISO = {
   '₹': 'inr',
   '₫': 'vnd',
   '฿': 'thb',
+  '₩': 'krw',
+  'JP¥': 'jpy',
+  '¥JPY': 'jpy',
+  '₱': 'php',
+  RM: 'myr',
+  '₺': 'try',
+  '₪': 'ils',
+  'R$': 'brl',
+  'zł': 'pln',
+  'ZŁ': 'pln',
+  '₴': 'uah',
+  '₦': 'ngn',
+  '₮': 'mnt',
+  '৳': 'bdt',
+  '₨': 'pkr',
+  '₸': 'kzt',
+};
+
+// ISO → 人民币汇率的静态兜底值（在线汇率优先，见 loadFxRates）
+const FALLBACK_RATES = {
+  cny: 1, usd: 7.2, eur: 7.8, gbp: 9.1, rub: 0.08, chf: 8.0,
+  inr: 0.086, vnd: 0.00028, thb: 0.2, cad: 5.1, aud: 4.7, hkd: 0.92,
+  twd: 0.23, sgd: 5.3, jpy: 0.048, krw: 0.0052, nzd: 4.3,
 };
 
 const FX_CACHE_KEY = 'pulse_fx_rates';
-const FX_URL = 'https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/cny.json';
+// 与官方一致的双源：frankfurter.dev → open.er-api.com（均为 1 CNY = rate 外币）
+const FX_APIS = [
+  'https://api.frankfurter.dev/v1/latest?base=CNY',
+  'https://open.er-api.com/v6/latest/CNY',
+];
 
-let fxRates = CURRENCY_TO_CNY;
+let fxRates = FALLBACK_RATES;
 
-// 拉取每日汇率（fawazahmed0/currency-api，jsDelivr CDN 分发，无需 key）；
-// localStorage 缓存 24h，失败或超时用静态兜底值
-async function loadFxRates() {
-  try {
-    const cached = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || 'null');
-    if (cached && cached.rates && Date.now() - cached.ts < 86_400_000) {
-      fxRates = cached.rates;
-      return;
+/** 货币符号或 ISO 代码 → 人民币汇率 */
+function curRate(currency) {
+  const s = String(currency || '').trim();
+  const iso = SYMBOL_TO_ISO[s] || SYMBOL_TO_ISO[s.toUpperCase()] || s.toLowerCase();
+  return fxRates[iso] ?? FALLBACK_RATES[iso] ?? 1;
+}
+
+async function fetchFxFromCny() {
+  for (const url of FX_APIS) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) continue;
+      const rates = (await res.json())?.rates;
+      if (rates && typeof rates.USD === 'number') return rates;
+    } catch {
+      /* 尝试下一个源 */
     }
+  }
+  return null;
+}
+
+// 拉取每日汇率：localStorage 缓存 24h；拉取失败时依次用过期缓存、静态兜底值
+async function loadFxRates() {
+  let cached = null;
+  try {
+    cached = JSON.parse(localStorage.getItem(FX_CACHE_KEY) || 'null');
   } catch {
     /* 缓存损坏则重新拉取 */
   }
-  try {
-    const res = await fetch(FX_URL);
-    const data = await res.json();
-    const cny = data && data.cny;
-    if (!cny || typeof cny.usd !== 'number') return;
-    const rates = {};
-    for (const [sym, iso] of Object.entries(CUR_TO_ISO)) {
-      rates[sym] = iso === 'cny' ? 1 : cny[iso] ? 1 / cny[iso] : CURRENCY_TO_CNY[sym] ?? 1;
+  if (cached && cached.rates && Date.now() - cached.ts < 86_400_000) {
+    fxRates = cached.rates;
+    return;
+  }
+  const fromCny = await fetchFxFromCny();
+  if (fromCny) {
+    const rates = { cny: 1 };
+    for (const [code, r] of Object.entries(fromCny)) {
+      if (typeof r === 'number' && r > 0) rates[code.toLowerCase()] = 1 / r;
     }
     fxRates = rates;
-    localStorage.setItem(FX_CACHE_KEY, JSON.stringify({ ts: Date.now(), rates }));
-  } catch {
-    /* 离线或接口不可用：沿用兜底值 */
+    try {
+      localStorage.setItem(FX_CACHE_KEY, JSON.stringify({ ts: Date.now(), rates }));
+    } catch {
+      /* 存储失败不影响使用 */
+    }
+  } else if (cached && cached.rates) {
+    fxRates = cached.rates; // 过期缓存兜底
   }
 }
 
@@ -1112,7 +1160,7 @@ export async function renderHome(root, ctx) {
       }
       totalRx += num(s.net_rx) || 0;
       totalTx += num(s.net_tx) || 0;
-      const rate = fxRates[s.currency] ?? 1;
+      const rate = curRate(s.currency);
       const price = parseFloat(s.price);
       if (Number.isFinite(price) && price > 0) totalAll += price * rate;
       const rv = remainingValue(s);

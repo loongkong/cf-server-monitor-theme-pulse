@@ -32,7 +32,7 @@ import {
   updateFlagImg,
   updateOsIconImg,
 } from '../utils.js';
-import {getAuthToken, getHistory, getServer, getServers} from '../api.js';
+import {getHistory, getServer, getServers} from '../api.js';
 import {Playback, normalizeTs} from '../playback.js';
 import {MetricSocket} from '../ws.js';
 import {LineChart} from '../charts.js';
@@ -55,6 +55,7 @@ const RANGES = [
   { label: '12小时', hours: 12 },
   { label: '24小时', hours: 24 },
   { label: '2天', hours: 48 },
+  { label: '4天', hours: 96 },
   { label: '7天', hours: 168 },
 ];
 
@@ -172,6 +173,7 @@ function loadParts(loadAvg) {
 function mapRows(rows) {
   const data = {
     cpu: [], ram: [], swap: [], disk: [],
+    diskRead: [], diskWrite: [],
     netIn: [], netOut: [],
     pingCt: [], pingCu: [], pingCm: [], pingBd: [],
     load1: [], load5: [], load15: [],
@@ -184,6 +186,9 @@ function mapRows(rows) {
     data.ram.push({ x, y: pct(r.ram_used, r.ram_total) });
     data.swap.push({ x, y: pct(r.swap_used, r.swap_total) });
     data.disk.push({ x, y: pct(r.disk_used, r.disk_total) });
+    // 磁盘 IO：历史行为平铺字段，实时上报可能嵌套在 disk 对象
+    data.diskRead.push({ x, y: num(r.disk_read_bps ?? (r.disk && r.disk.read_bps)) });
+    data.diskWrite.push({ x, y: num(r.disk_write_bps ?? (r.disk && r.disk.write_bps)) });
     data.netIn.push({ x, y: num(r.net_in_speed) });
     data.netOut.push({ x, y: num(r.net_out_speed) });
     data.pingCt.push({ x, y: pingState(r.ping_ct).value });
@@ -251,8 +256,6 @@ export async function renderDetail(root, ctx, id) {
       })
       .catch(() => {});
   }
-  const showLongHistory = !!(ctx.config && ctx.config.show_long_history);
-
   // ----- 头部 -----
   const headDot = el('i', { class: 'status-dot' });
   const titleEl = el('h2', { class: 'detail-title' });
@@ -479,9 +482,8 @@ export async function renderDetail(root, ctx, id) {
   const chartsGrid = el('div', { class: 'charts-grid' });
   const rangeSeg = el('div', { class: 'seg' });
   const rangeBtns = new Map();
-  // 官方口径：≤24h 始终展示；48h+ 需要站点开启 show_long_history
-  const visibleRanges = RANGES.filter((r) => r.hours <= 24 || showLongHistory);
-  for (const r of visibleRanges) {
+  // 时间范围全部展示，是否可取由后端判定（游客 hours>1 会 401，走兜底提示）
+  for (const r of RANGES) {
     const b = el('button', { class: 'seg-btn', text: r.label, dataset: { hours: String(r.hours) } });
     b.addEventListener('click', () => loadRange(r.hours));
     rangeBtns.set(r.hours, b);
@@ -511,6 +513,15 @@ export async function renderDetail(root, ctx, id) {
     disk: chartCard(chartsGrid, '磁盘', [{ key: 'disk', label: '磁盘', color: COLORS.amber }], {
       yMax: 100, yFormat: (v) => `${v.toFixed(0)}%`,
     }),
+    diskio: chartCard(
+      chartsGrid,
+      '磁盘 IO',
+      [
+        { key: 'diskRead', label: '读取', color: COLORS.green },
+        { key: 'diskWrite', label: '写入', color: COLORS.purple },
+      ],
+      { yMax: null, yFormat: (v) => `${fmtBytes(v)}/s` },
+    ),
     net: chartCard(
       chartsGrid,
       '网络',
@@ -550,6 +561,10 @@ export async function renderDetail(root, ctx, id) {
       { key: 'swap', label: 'Swap', color: COLORS.purple },
     ],
     disk: [{ key: 'disk', label: '磁盘', color: COLORS.amber }],
+    diskio: [
+      { key: 'diskRead', label: '读取', color: COLORS.green },
+      { key: 'diskWrite', label: '写入', color: COLORS.purple },
+    ],
     net: [
       { key: 'netIn', label: '下行', color: COLORS.green },
       { key: 'netOut', label: '上行', color: COLORS.blue },
@@ -586,12 +601,6 @@ export async function renderDetail(root, ctx, id) {
   }
 
   async function loadRange(hours) {
-    // 长历史要求登录（hours>1 服务端强制 401）：未登录直接提示，不发必败的请求
-    if (hours > 1 && !getAuthToken()) {
-      toast('查看 1 小时以上历史需要登录，请在默认主题登录');
-      syncRangeBtns();
-      return;
-    }
     currentHours = hours;
     syncRangeBtns();
     try {
@@ -639,6 +648,14 @@ export async function renderDetail(root, ctx, id) {
         trim,
       );
       charts.disk.append({ disk: pct(data.disk_used, data.disk_total) }, ts, trim);
+      charts.diskio.append(
+        {
+          diskRead: num(data.disk_read_bps ?? (data.disk && data.disk.read_bps)),
+          diskWrite: num(data.disk_write_bps ?? (data.disk && data.disk.write_bps)),
+        },
+        ts,
+        trim,
+      );
       charts.net.append({ netIn: num(data.net_in_speed), netOut: num(data.net_out_speed) }, ts, trim);
       charts.ping.append(
         {

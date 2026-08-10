@@ -5,6 +5,8 @@
 //   accent: "#2dd4bf"   主题强调色
 //   mode:   "dark" | "light"   默认配色模式（用户手动切换后优先用户选择）
 
+const THEME_VERSION = 'v1.1.0';
+
 import {el, fmtClock, stateBlock, svg} from './utils.js';
 import {getConfig} from './api.js';
 import {renderHome} from './views/home.js';
@@ -129,8 +131,22 @@ function renderFooter(config) {
   const footer = document.getElementById('site-footer');
   footer.textContent = '';
   footer.append(
-    el('span', { class: 'f-brand', text: 'CF-Server-Monitor' }),
-    el('span', { text: ` ${config.version || ''} · Pulse 主题` }),
+    el('a', {
+      class: 'f-brand',
+      href: 'https://github.com/huilang-me/CF-Server-Monitor',
+      target: '_blank',
+      rel: 'noopener',
+      text: 'CF-Server-Monitor',
+    }),
+    el('span', { text: ` ${config.version || ''} · ` }),
+    el('a', {
+      class: 'f-brand',
+      href: 'https://github.com/loongkong/cf-server-monitor-theme-pulse',
+      target: '_blank',
+      rel: 'noopener',
+      text: 'Pulse',
+    }),
+    el('span', { text: ` ${THEME_VERSION}` }),
   );
 }
 

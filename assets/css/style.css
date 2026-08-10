@@ -1716,6 +1716,11 @@ html[data-theme="light"] .chart-tip {
 .site-footer .f-brand {
   color: var(--accent);
   font-family: var(--mono);
+  text-decoration: none;
+}
+
+.site-footer a.f-brand:hover {
+  text-decoration: underline;
 }
 
 /* ================= 响应式 ================= */
