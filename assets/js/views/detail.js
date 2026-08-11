@@ -32,7 +32,7 @@ import {
   updateFlagImg,
   updateOsIconImg,
 } from '../utils.js';
-import {getHistory, getServer, getServers} from '../api.js';
+import {getAuthToken, getHistory, getServer, getServers} from '../api.js';
 import {Playback, normalizeTs} from '../playback.js';
 import {MetricSocket} from '../ws.js';
 import {LineChart} from '../charts.js';
@@ -589,18 +589,13 @@ export async function renderDetail(root, ctx, id) {
     for (const [h, b] of rangeBtns) b.classList.toggle('active', h === currentHours);
   }
 
-  function lockLongRanges() {
-    if (longLocked) return;
-    longLocked = true;
-    for (const [h, b] of rangeBtns) {
-      if (h > 1) {
-        b.disabled = true;
-        b.title = '查看 1 小时以上历史需要管理员权限';
-      }
-    }
-  }
-
   async function loadRange(hours) {
+    // 访客上限 24h（服务端强制 401）：未登录点击更长范围直接提示，不发必败的请求
+    if (hours > 24 && !getAuthToken()) {
+      toast('非登录最多查询 24 小时数据，请先登录');
+      syncRangeBtns();
+      return;
+    }
     currentHours = hours;
     syncRangeBtns();
     try {
@@ -610,10 +605,9 @@ export async function renderDetail(root, ctx, id) {
         chart.setSeries(CHART_SERIES[cid].map((d) => ({ ...d, data: mapped[d.key] })));
       }
     } catch (err) {
-      if (err.status === 401 && hours > 1) {
-        toast('查看 1 小时以上历史需要管理员权限');
-        lockLongRanges();
-        if (currentHours > 1) loadRange(1);
+      if (err.status === 401 && hours > 24) {
+        toast('非登录最多查询 24 小时数据，请先登录');
+        if (currentHours > 24) loadRange(24);
       } else if (err.status === 409) {
         toast('历史数据库需要升级，请联系管理员');
       } else {

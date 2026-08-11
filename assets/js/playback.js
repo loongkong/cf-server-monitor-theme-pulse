@@ -93,6 +93,19 @@ export class Playback {
     }
     if (!events.length) return;
 
+    // 客户端时钟修正：reportTs 是服务端接收时刻（可信），
+    // 批次最新样本≈采集于上报瞬间，两者之差即探针时钟偏移。
+    // |偏移| ≥ 5s 才修正（更小的视为网络延迟），滞后/偏快都会平移回正
+    const reportMs = normalizeTs(msgTs, null);
+    if (reportMs) {
+      let newest = 0;
+      for (const e of events) if (e.ts > newest) newest = e.ts;
+      const skew = reportMs - newest;
+      if (newest && Math.abs(skew) >= 5000) {
+        for (const e of events) e.ts += skew;
+      }
+    }
+
     // 实时消息跳过已展示过的样本；缓存批次回放不过滤（对齐官方 replayCachedReport）
     const lastTs = this.lastSampleTs.get(serverId);
     const incoming = replayCachedReport
@@ -129,10 +142,12 @@ export class Playback {
       cursor = current == null ? first : Math.max(first, current);
     }
 
-    // 单样本批次直接应用（丢弃尚未回放的旧样本），对齐官方
+    // 单样本批次直接应用（丢弃尚未回放的旧样本）；
+    // 缓存的单点没有批次时间线可还原，按普通单点上报处理：
+    // 展示该点采集时刻（游标从样本 ts 起步），滞后从打开页面起随 tick 增长
     if (buf.length === 1) {
       this.buffers.delete(serverId);
-      this._apply(serverId, buf[0], cursor);
+      this._apply(serverId, buf[0], replayCachedReport ? buf[0].ts : cursor);
       return;
     }
 
