@@ -6,7 +6,8 @@
 :root {
   --accent: #2dd4bf;
   --accent-2: #38bdf8;
-  --ok: #34d399;
+  /* 状态绿并入主题 teal，全站只保留一个"好"颜色 */
+  --ok: var(--accent);
   --warn: #fbbf24;
   --bad: #fb7185;
 
@@ -366,7 +367,7 @@ button {
 }
 
 .stat-sub {
-  margin-top: 5px;
+  margin-top: 4px;
   font-size: 12px;
   color: var(--dim);
 }
@@ -425,7 +426,7 @@ button {
   border: none;
   background: transparent;
   color: var(--dim);
-  font-size: 12.5px;
+  font-size: 12px;
   padding: 6px 14px;
   border-radius: 7px;
   transition: background 0.15s, color 0.15s;
@@ -540,7 +541,6 @@ button {
   border: 1px solid var(--border-strong);
   color: var(--dim);
   font-size: 12px;
-  letter-spacing: 0.15em;
   z-index: 3;
   pointer-events: none;
 }
@@ -555,7 +555,7 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .status-dot {
@@ -667,17 +667,7 @@ button {
   white-space: nowrap;
 }
 
-.tag-chip {
-  color: var(--accent-2);
-  border-color: color-mix(in srgb, var(--accent-2) 30%, transparent);
-}
-
-/* region-chip 复用 tag-chip 外观，仅颜色不同 */
-.region-chip {
-  color: var(--dim);
-  border-color: var(--border);
-}
-
+/* chip 统一中性灰；仅 warn/bad 状态色表达异常 */
 .tag-chip.warn {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 35%, transparent);
@@ -718,14 +708,12 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
 }
 
 .meter-label {
   font-size: 11px;
   color: var(--dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   font-weight: 500;
 }
 
@@ -747,15 +735,15 @@ button {
   border-radius: 7px;
   width: 0;
   transition: width 0.5s ease;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  background: var(--accent);
 }
 
 .meter-fill.lv-warn {
-  background: linear-gradient(90deg, var(--warn), #f59e0b);
+  background: var(--warn);
 }
 
 .meter-fill.lv-bad {
-  background: linear-gradient(90deg, var(--bad), #f43f5e);
+  background: var(--bad);
 }
 
 /* 卡片信息行（负载 / 网络 / 月流） */
@@ -763,8 +751,8 @@ button {
 .srv-info {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
@@ -772,7 +760,8 @@ button {
 .info-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 22px;
+  padding-right: 16px;
   font-size: 12px;
   color: var(--dim);
 }
@@ -782,30 +771,31 @@ button {
   width: 28px;
   font-size: 11px;
   color: var(--dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   font-weight: 500;
 }
 
 .info-val {
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text);
   font-weight: 500;
 }
 
 /* 负载显示：1m/5m/15m 标签 + 颜色分级 */
 
+/* 行宽 − 标签 − 间隔后，负载三等分、网络/流量二等分，数值均匀分布 */
 .load-box {
-  display: inline-flex;
+  display: flex;
   gap: 10px;
   align-items: baseline;
+  flex: 1;
+  min-width: 0;
 }
 
 .ld-val {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 550;
-  /* 与网络/流量行等宽：3×50 + 2×10(间隔) = 170px */
-  min-width: 50px;
+  flex: 1;
+  min-width: 0;
 }
 
 .ld-val.good {
@@ -821,16 +811,16 @@ button {
 }
 
 .net-item {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .net-item b {
   font-weight: 500;
   color: var(--text);
-  display: inline-block;
-  min-width: 62px;
 }
 
 .ico {
@@ -850,17 +840,20 @@ button {
 
 .ping-panel {
   display: flex;
-  gap: 10px;
-  margin-top: 10px;
-  padding-top: 10px;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
   flex-wrap: wrap;
 }
 
+/* 与信息行同款均分：剩余宽度按 ping 项数等分 */
 .pp-item {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
   font-size: 11px;
 }
 
@@ -938,7 +931,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .srv-bottom .bt-item {
@@ -1027,8 +1020,6 @@ button {
 .ring-label {
   font-size: 10.5px;
   color: var(--dim);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   font-weight: 500;
 }
 
@@ -1141,7 +1132,7 @@ button {
   display: block;
   height: 100%;
   border-radius: 5px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   transition: width 0.5s ease;
 }
 
@@ -1162,7 +1153,7 @@ button {
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--dim);
-  font-size: 12.5px;
+  font-size: 12px;
   padding: 6px 13px;
   border-radius: var(--radius-sm);
   margin-bottom: 16px;
@@ -1292,7 +1283,7 @@ button {
   display: block;
   height: 100%;
   border-radius: 5px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  background: var(--accent);
   transition: width 0.5s ease;
 }
 

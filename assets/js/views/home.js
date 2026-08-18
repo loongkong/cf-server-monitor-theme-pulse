@@ -95,17 +95,15 @@ function meterRow(label) {
 }
 
 // 实时时间行（对齐官方 dataTimeText）
-// 上报：仅时钟（官方不给 report 加 lag）
-// 采集：时钟 + (+Ns)，lag = display_ts - sample_ts；display_ts 为展示时钟，
-// 在线时随 wall clock 每秒前进，(+Ns) 随之增长，下一个样本应用时回落
+// 单条上报：(+Ns) = 当前全局时间 − 采集时间，随时间增长，下一样本应用时回落
+// 批量上报：上报仅时钟，采集时钟 + (+Ns)，lag = display_ts - sample_ts
 // 返回 [上报文本, 采集文本, lag 文本]；单条上报时上报为 null，采集位放合并文本；
 // lag 文本独立返回，便于用固定宽度占位（避免位数变化导致布局抖动）
 function liveParts(d) {
   if (!isOnline(d) || !d.sample_ts) return null;
   if (!d.report_ts || d.batch_size === 1) {
-    // 单条上报：展示时钟（≈上报时刻）− 采集时刻
-    const t = d.display_ts || d.report_ts || d.sample_ts;
-    const lag = Math.max(0, Math.floor((t - d.sample_ts) / 1000));
+    // 单条上报：lag = 当前全局时间 − 采集时间；不足 1s（相等）不展示
+    const lag = Math.max(0, Math.floor((Date.now() - d.sample_ts) / 1000));
     return [null, `上报 ${fmtClock(d.sample_ts)}`, lag > 0 ? `(+${lag}s)` : ''];
   }
   // 批量上报：上报仅时钟，采集带 lag
@@ -382,7 +380,7 @@ function barCard(s, sysConfig) {
   const name = el('h3', { class: 'srv-name' });
   const regionImg = flagImg(null);
   const regionText = document.createTextNode('');
-  const region = el('span', { class: 'tag-chip region-chip' }, regionImg, regionText);
+  const region = el('span', { class: 'region-chip' }, regionImg, regionText);
   const osImg = osIconImg(null);
   const osText = document.createTextNode('');
   const osChip = el('span', { class: 'tag-chip' }, osImg, osText);
@@ -600,7 +598,7 @@ function ringCard(s, sysConfig) {
   const name = el('h3', { class: 'srv-name' });
   const regionImg = flagImg(null);
   const regionText = document.createTextNode('');
-  const region = el('span', { class: 'tag-chip region-chip' }, regionImg, regionText);
+  const region = el('span', { class: 'region-chip' }, regionImg, regionText);
   const osImg = osIconImg(null);
   const osText = document.createTextNode('');
   const osChip = el('span', { class: 'tag-chip' }, osImg, osText);
@@ -953,13 +951,16 @@ export async function renderHome(root, ctx) {
   ctx.sysConfig = sysConfig;
   const dataMap = new Map(servers.map((s) => [s.id, s]));
 
+  // 过滤条件持久化在 hash 查询串（#/?q=xxx），刷新/分享链接可还原
+  const urlQuery = () => new URLSearchParams((location.hash.match(/\?(.+)$/) || [])[1] || '');
+  const initialQuery = (urlQuery().get('q') || '').trim();
   const state = {
     mode:
       localStorage.getItem('probe_display_mode') ||
       sysConfig.display_mode ||
       (ctx.config && ctx.config.display_mode) ||
       'bar',
-    filter: '',
+    filter: initialQuery.toLowerCase(),
   };
   if (!MODE_LABELS[state.mode]) state.mode = 'bar';
 
@@ -1011,6 +1012,7 @@ export async function renderHome(root, ctx) {
     class: 'search-input',
     type: 'search',
     placeholder: '搜索…',
+    value: initialQuery,
   });
   const segBtns = new Map();
   const seg = el(
@@ -1139,7 +1141,11 @@ export async function renderHome(root, ctx) {
     'input',
     debounce(() => {
       state.filter = search.value.trim().toLowerCase();
+      // replaceState 不产生历史记录、不触发 hashchange 重路由
+      const q = search.value.trim();
+      history.replaceState(null, '', q ? `#/?q=${encodeURIComponent(q)}` : '#/');
       applyFilter();
+      refreshStats();
     }, 120),
   );
 
@@ -1153,13 +1159,19 @@ export async function renderHome(root, ctx) {
     let totalValue = 0; // 剩余价值合计（折算人民币）
     let totalAll = 0; // 总价值合计（全周期价格，折算人民币）
     for (const s of dataMap.values()) {
+      // 上下行（网速 + 累计流量）只统计过滤后可见的机器；在线数与价值保持全量
+      const visible = matchFilter(s);
       if (isOnline(s)) {
         online += 1;
-        speedIn += num(s.net_in_speed) || 0;
-        speedOut += num(s.net_out_speed) || 0;
+        if (visible) {
+          speedIn += num(s.net_in_speed) || 0;
+          speedOut += num(s.net_out_speed) || 0;
+        }
       }
-      totalRx += num(s.net_rx) || 0;
-      totalTx += num(s.net_tx) || 0;
+      if (visible) {
+        totalRx += num(s.net_rx) || 0;
+        totalTx += num(s.net_tx) || 0;
+      }
       const rate = curRate(s.currency);
       const price = parseFloat(s.price);
       if (Number.isFinite(price) && price > 0) totalAll += price * rate;
