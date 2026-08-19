@@ -4,7 +4,7 @@
 // - ResizeObserver 自适应宽度
 // - append() 支持实时追加数据点并按窗口裁剪
 
-import {el, fmtDateTime, fmtTimeShort, svg} from './utils.js';
+import {el, fmtDateTime, fmtTimeShort, serverNow, svg} from './utils.js?v=1.1.2';
 
 let chartUid = 0;
 
@@ -107,7 +107,7 @@ export class LineChart {
       }
     }
     if (!hasData) {
-      xMax = Date.now();
+      xMax = serverNow();
       xMin = xMax - 3_600_000;
       yMaxSeen = 0;
     }

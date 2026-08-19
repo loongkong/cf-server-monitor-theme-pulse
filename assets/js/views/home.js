@@ -24,16 +24,17 @@ import {
   pingClass,
   pingState,
   priceText,
+  serverNow,
   shortOS,
   stateBlock,
   svg,
   timeAgo,
   updateFlagImg,
   updateOsIconImg,
-} from '../utils.js';
-import {getServers} from '../api.js';
-import {Playback, normalizeTs} from '../playback.js';
-import {MetricSocket} from '../ws.js';
+} from '../utils.js?v=1.1.2';
+import {getServers} from '../api.js?v=1.1.2';
+import {Playback, normalizeTs} from '../playback.js?v=1.1.2';
+import {MetricSocket} from '../ws.js?v=1.1.2';
 
 const MODE_LABELS = { bar: '条形', ring: '圆环', table: '表格' };
 
@@ -103,7 +104,7 @@ function liveParts(d) {
   if (!isOnline(d) || !d.sample_ts) return null;
   if (!d.report_ts || d.batch_size === 1) {
     // 单条上报：lag = 当前全局时间 − 采集时间；不足 1s（相等）不展示
-    const lag = Math.max(0, Math.floor((Date.now() - d.sample_ts) / 1000));
+    const lag = Math.max(0, Math.floor((serverNow() - d.sample_ts) / 1000));
     return [null, `上报 ${fmtClock(d.sample_ts)}`, lag > 0 ? `(+${lag}s)` : ''];
   }
   // 批量上报：上报仅时钟，采集带 lag
@@ -1204,7 +1205,7 @@ export async function renderHome(root, ctx) {
       Object.assign(cur, data);
       // 在线判定使用批次上报时间（对齐官方 last_updated = report_timestamp）：
       // 回放过期缓存批次时服务器按真实上报时间离线，而非回放期间"假在线"
-      cur.last_updated = meta && meta.reportTs ? meta.reportTs : Date.now();
+      cur.last_updated = meta && meta.reportTs ? meta.reportTs : serverNow();
       // 采集/上报时间：保留 report_ts / display_ts / batch_size 供显示逻辑判断
       cur.sample_ts = ts;
       cur.display_ts = displayTs;

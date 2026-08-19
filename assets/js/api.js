@@ -9,10 +9,18 @@
 //   用于解锁 1 小时以上的历史查询；主题本身不提供登录功能。
 // - 站点开启 Turnstile 时，先完成人机验证换取 turnstile_verified 凭证再请求数据。
 
-import {el} from './utils.js';
+import {el, syncServerTime} from './utils.js?v=1.1.2';
 
 const API_BASE = (window.__API_BASE__ || '').replace(/\/$/, '');
 const CRED_KEY = 'probe_ts_cred';
+
+// 用响应的 Date 头校准服务器时钟（精度 1s，取区间中点 +500ms 减少系统性低估）
+function anchorClock(res) {
+  const d = res.headers.get('date');
+  if (!d) return;
+  const t = Date.parse(d);
+  if (!Number.isNaN(t)) syncServerTime(t + 500);
+}
 
 let _config = null;
 let _turnstileCred = loadCred();
@@ -85,6 +93,7 @@ async function toError(res) {
 
 async function request(path, { retryOnTurnstile = true } = {}) {
   const res = await fetch(API_BASE + path, { headers: authHeaders() });
+  anchorClock(res);
   if (res.status === 403 && retryOnTurnstile && _config && _config.turnstile_enabled) {
     clearCred();
     await ensureTurnstile();
@@ -115,6 +124,7 @@ async function exchangeTurnstile(token) {
   const jwt = getAuthToken();
   if (jwt) headers.Authorization = `Bearer ${jwt}`;
   const res = await fetch(`${API_BASE}/api/config`, { headers });
+  anchorClock(res);
   if (!res.ok) throw await toError(res);
   const data = await res.json();
   _config = data;
@@ -197,6 +207,7 @@ export function ensureTurnstile() {
 export async function getConfig(force = false) {
   if (_config && !force) return _config;
   const res = await fetch(`${API_BASE}/api/config`, { headers: authHeaders() });
+  anchorClock(res);
   if (!res.ok) throw await toError(res);
   _config = await res.json();
   if (_config.turnstile_enabled && !_config.verified) {

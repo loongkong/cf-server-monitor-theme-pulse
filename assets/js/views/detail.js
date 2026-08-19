@@ -24,6 +24,7 @@ import {
   pingClass,
   pingState,
   priceText,
+  serverNow,
   shortOS,
   stateBlock,
   svg,
@@ -31,11 +32,11 @@ import {
   toast,
   updateFlagImg,
   updateOsIconImg,
-} from '../utils.js';
-import {getAuthToken, getHistory, getServer, getServers} from '../api.js';
-import {Playback, normalizeTs} from '../playback.js';
-import {MetricSocket} from '../ws.js';
-import {LineChart} from '../charts.js';
+} from '../utils.js?v=1.1.2';
+import {getAuthToken, getHistory, getServer, getServers} from '../api.js?v=1.1.2';
+import {Playback, normalizeTs} from '../playback.js?v=1.1.2';
+import {MetricSocket} from '../ws.js?v=1.1.2';
+import {LineChart} from '../charts.js?v=1.1.2';
 
 const COLORS = {
   teal: '#2dd4bf',
@@ -371,12 +372,13 @@ export async function renderDetail(root, ctx, id) {
   billTile.append(billBox);
   billTile.style.display = 'none';
 
+  // 测速磁贴较高，放到靠后位置与账单（同样偏高）相邻，避免把行高顶起来
   const tilesGrid = el(
     'div',
     { class: 'tiles-grid' },
     tCpu.el, tRam.el, tSwap.el, tDisk.el,
     tLoad.el, tNet.el, tMonth.el, tProc.el,
-    pingTile, tSys.el, tUptime.el, tIp,
+    tUptime.el, tSys.el, pingTile, tIp,
     gpuTile.el, billTile,
   );
 
@@ -629,12 +631,12 @@ export async function renderDetail(root, ctx, id) {
       Object.assign(srv, data);
       // 在线判定使用批次上报时间（对齐官方 last_updated = report_timestamp）；
       // 图表 x 轴仍使用样本采集时刻
-      srv.last_updated = meta && meta.reportTs ? meta.reportTs : Date.now();
+      srv.last_updated = meta && meta.reportTs ? meta.reportTs : serverNow();
       srv.sample_ts = ts;
       srv.display_ts = displayTs;
       srv.report_ts = meta ? meta.reportTs : null;
       srv.batch_size = meta ? meta.batchSize : 1;
-      const trim = Date.now() - currentHours * 3_600_000;
+      const trim = serverNow() - currentHours * 3_600_000;
       charts.cpu.append({ cpu: num(data.cpu) }, ts, trim);
       charts.ram.append(
         { ram: pct(data.ram_used, data.ram_total), swap: pct(data.swap_used, data.swap_total) },

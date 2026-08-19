@@ -1,6 +1,9 @@
 // WebSocket 实时推送客户端：/api/ws
 // - subscribe=all 时需在连接后发送 {type:'subscribe', ids:[...]} 限定范围
 // - 自动心跳（ping 25s）、指数退避重连、页面可见时立即重连
+// - batchUpdate 的服务端时间戳同时用于校准全局服务器时钟（见 utils.syncServerTime）
+
+import {syncServerTime} from './utils.js?v=1.1.2';
 
 export class MetricSocket {
   /**
@@ -67,7 +70,10 @@ export class MetricSocket {
       } catch {
         return;
       }
-      if (msg && msg.type === 'batchUpdate') this.onBatch(msg);
+      if (msg && msg.type === 'batchUpdate') {
+        if (msg.ts) syncServerTime(msg.ts);
+        this.onBatch(msg);
+      }
     };
 
     ws.onclose = () => {

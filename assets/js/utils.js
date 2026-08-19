@@ -4,6 +4,30 @@
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// ---------- 服务器时钟 ----------
+// 数据语义上的"现在"以服务器时间为准（用户本地时钟可能走快/走慢）。
+// 锚点：API 响应的 Date 头、WS batchUpdate 的服务端时间戳；
+// 两次同步之间用单调时钟 performance.now() 推进，下次响应到达时再修正。
+// serverNow() 保证单调不回退，避免 UI 时间抖动。
+
+let _clockOffset = null; // 服务器时间 − performance.now()
+let _clockLast = 0;
+
+/** 用服务端时间戳（毫秒；秒级或数字字符串亦可）校准时钟 */
+export function syncServerTime(value) {
+  let t = Number(value);
+  if (!Number.isFinite(t) || t <= 0) return;
+  if (t < 10_000_000_000) t *= 1000;
+  _clockOffset = t - performance.now();
+}
+
+/** 服务器时间的"现在"；尚未同步过时回退到本地时钟 */
+export function serverNow() {
+  const t = _clockOffset == null ? Date.now() : Math.round(performance.now() + _clockOffset);
+  _clockLast = Math.max(_clockLast, t);
+  return _clockLast;
+}
+
 /** 创建 HTML 元素。attrs 支持 class / text / dataset / style(对象) / onXxx(函数) / 其他属性 */
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -126,7 +150,7 @@ export function fmtDate(ts) {
 export function fmtUptime(bootMs) {
   const t = num(bootMs);
   if (!t) return '—';
-  let s = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  let s = Math.max(0, Math.floor((serverNow() - t) / 1000));
   const d = Math.floor(s / 86400);
   s -= d * 86400;
   const h = Math.floor(s / 3600);
@@ -140,7 +164,7 @@ export function fmtUptime(bootMs) {
 export function timeAgo(ts) {
   const t = num(ts);
   if (!t) return '无数据';
-  const diff = Math.max(0, Date.now() - t);
+  const diff = Math.max(0, serverNow() - t);
   const m = Math.floor(diff / 60000);
   if (m < 1) return '刚刚';
   if (m < 60) return `${m} 分钟前`;
@@ -156,7 +180,7 @@ export const ONLINE_WINDOW = 300_000;
 
 export function isOnline(s) {
   const t = num(s && s.last_updated);
-  return !!t && Date.now() - t < ONLINE_WINDOW;
+  return !!t && serverNow() - t < ONLINE_WINDOW;
 }
 
 /** IP 可达性：兼容旧格式 "1"/"0" 与新格式（真实公网 IP 字符串 / "0"） */
@@ -171,9 +195,10 @@ export function pingState(v) {
   return n == null ? { kind: 'none', value: null } : { kind: 'ok', value: n };
 }
 
+// 阈值对齐官方主题：good <100ms，mid <200ms，bad ≥200ms
 export function pingClass(ms) {
   if (ms == null) return '';
-  return ms < 60 ? 'good' : ms < 150 ? 'mid' : 'bad';
+  return ms < 100 ? 'good' : ms < 200 ? 'mid' : 'bad';
 }
 
 export function avgPing(s) {
@@ -381,7 +406,7 @@ export function daysUntil(dateStr) {
   if (!dateStr) return null;
   const t = Date.parse(`${dateStr}T00:00:00`);
   if (Number.isNaN(t)) return null;
-  return Math.ceil((t - Date.now()) / 86_400_000);
+  return Math.ceil((t - serverNow()) / 86_400_000);
 }
 
 const BILLING_MAP = {

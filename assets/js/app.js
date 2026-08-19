@@ -5,12 +5,12 @@
 //   accent: "#2dd4bf"   主题强调色
 //   mode:   "dark" | "light"   默认配色模式（用户手动切换后优先用户选择）
 
-const THEME_VERSION = 'v1.1.0';
+const THEME_VERSION = 'v1.1.2';
 
-import {el, fmtClock, stateBlock, svg} from './utils.js';
-import {getConfig} from './api.js';
-import {renderHome} from './views/home.js';
-import {renderDetail} from './views/detail.js';
+import {el, fmtClock, serverNow, stateBlock, svg} from './utils.js?v=1.1.2';
+import {getConfig} from './api.js?v=1.1.2';
+import {renderHome} from './views/home.js?v=1.1.2';
+import {renderDetail} from './views/detail.js?v=1.1.2';
 
 const html = document.documentElement;
 const THEME_KEY = 'probe_color_mode';
@@ -119,7 +119,7 @@ function renderHeader(config) {
 
   const clock = el('span', { class: 'clock mono' });
   const tick = () => {
-    clock.textContent = fmtClock(Date.now());
+    clock.textContent = fmtClock(serverNow());
   };
   tick();
   setInterval(tick, 1000);

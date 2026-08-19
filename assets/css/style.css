@@ -34,7 +34,7 @@ html[data-theme="dark"] {
   --shadow: 0 8px 28px rgba(2, 6, 18, 0.5);
   --glow-a: rgba(45, 212, 191, 0.10);
   --glow-b: rgba(56, 189, 248, 0.08);
-  --grid-line: rgba(130, 160, 210, 0.05);
+  --grid-line: rgba(130, 160, 210, 0.04);
 }
 
 html[data-theme="light"] {
@@ -50,7 +50,7 @@ html[data-theme="light"] {
   --shadow: 0 8px 24px rgba(30, 55, 100, 0.08);
   --glow-a: rgba(45, 212, 191, 0.12);
   --glow-b: rgba(56, 189, 248, 0.10);
-  --grid-line: rgba(60, 100, 160, 0.05);
+  --grid-line: rgba(60, 100, 160, 0.035);
 }
 
 * {
@@ -74,7 +74,7 @@ body {
   transition: background 0.25s ease, color 0.25s ease;
 }
 
-/* 背景装饰：遥测网格 + 双色辉光 */
+/* 背景装饰：遥测网格（降低透明度，只留隐约纹理） + 顶部双色辉光 */
 body::before {
   content: "";
   position: fixed;
@@ -82,8 +82,8 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(640px 320px at 12% -6%, var(--glow-a), transparent 70%),
-    radial-gradient(720px 360px at 88% -10%, var(--glow-b), transparent 70%),
+    radial-gradient(720px 360px at 12% -8%, var(--glow-a), transparent 70%),
+    radial-gradient(820px 400px at 88% -12%, var(--glow-b), transparent 70%),
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: auto, auto, 44px 44px, 44px 44px;
@@ -201,17 +201,10 @@ button {
 
 .brand-title {
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.brand-sub {
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  color: var(--dim);
-  text-transform: uppercase;
 }
 
 .header-right {
@@ -313,18 +306,6 @@ button {
   overflow: hidden;
 }
 
-.stat-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 18px;
-  right: 18px;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  opacity: 0.65;
-}
-
 .stat-label {
   display: flex;
   align-items: center;
@@ -342,7 +323,7 @@ button {
 
 .stat-value {
   font-size: 22px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -462,7 +443,7 @@ button {
 
 .group-title {
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .group-title::before {
@@ -492,18 +473,6 @@ button {
   position: relative;
   overflow: hidden;
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.srv-card::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 18px;
-  right: 18px;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  opacity: 0.5;
 }
 
 .srv-card:hover {
@@ -584,7 +553,7 @@ button {
 
 .srv-name {
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -719,7 +688,7 @@ button {
 
 .meter-val {
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 600;
 }
 
 .meter-bar {
@@ -774,12 +743,6 @@ button {
   font-weight: 500;
 }
 
-.info-val {
-  font-size: 12px;
-  color: var(--text);
-  font-weight: 500;
-}
-
 /* 负载显示：1m/5m/15m 标签 + 颜色分级 */
 
 /* 行宽 − 标签 − 间隔后，负载三等分、网络/流量二等分，数值均匀分布 */
@@ -793,14 +756,13 @@ button {
 
 .ld-val {
   font-size: 12px;
-  font-weight: 550;
+  font-weight: 600;
+  color: var(--text);
   flex: 1;
   min-width: 0;
 }
 
-.ld-val.good {
-  color: var(--ok);
-}
+/* good 状态不再上色（回归正文色），只有 mid/bad 用颜色提示异常 */
 
 .ld-val.mid {
   color: var(--warn);
@@ -838,6 +800,7 @@ button {
 
 /* Ping 分项面板 */
 
+/* Ping 分项面板 */
 .ping-panel {
   display: flex;
   gap: 8px;
@@ -863,12 +826,8 @@ button {
 }
 
 .pp-val {
-  font-weight: 550;
+  font-weight: 600;
   color: var(--text);
-}
-
-.pp-val.good {
-  color: var(--ok);
 }
 
 .pp-val.mid {
@@ -879,14 +838,7 @@ button {
   color: var(--bad);
 }
 
-/* IP 徽章 */
-
-.ip-chip {
-  color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 30%, transparent);
-}
-
-/* 旧样式（表格模式仍引用） */
+/* IP 徽章：中性灰（可达只是状态，不是异常提示，不再用主题色） */
 
 .ping-chip {
   display: inline-flex;
@@ -903,11 +855,6 @@ button {
 .ping-chip .ico {
   width: 11px;
   height: 11px;
-}
-
-.ping-chip.good {
-  color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
 }
 
 .ping-chip.mid {
@@ -935,10 +882,9 @@ button {
 }
 
 .srv-bottom .bt-item {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--dim);
   letter-spacing: -0.02em;
-  opacity: 0.7;
   white-space: nowrap;
 }
 
@@ -946,23 +892,6 @@ button {
 .srv-bottom .bt-lag {
   display: inline-block;
   min-width: 6ch;
-}
-
-.meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--dim);
-  padding: 1.5px 8px;
-  border-radius: 6px;
-  background: var(--panel-2);
-  border: 1px solid var(--border);
-}
-
-.meta-item .ico {
-  width: 11px;
-  height: 11px;
 }
 
 /* ================= 圆环模式 ================= */
@@ -1014,11 +943,11 @@ button {
 .ring-txt {
   fill: var(--text);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .ring-label {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--dim);
   font-weight: 500;
 }
@@ -1042,7 +971,7 @@ button {
 
 .srv-table th {
   text-align: left;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--dim);
   padding: 11px 14px;
@@ -1186,7 +1115,7 @@ button {
 
 .detail-title {
   font-size: 21px;
-  font-weight: 680;
+  font-weight: 700;
 }
 
 .chip-row {
@@ -1196,7 +1125,7 @@ button {
 }
 
 .chip {
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 10px;
   border-radius: 99px;
   border: 1px solid var(--border);
@@ -1237,7 +1166,7 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--dim);
   margin-bottom: 7px;
 }
@@ -1250,7 +1179,7 @@ button {
 
 .tile-value {
   font-size: 19px;
-  font-weight: 640;
+  font-weight: 600;
   line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
@@ -1263,7 +1192,7 @@ button {
 
 .tile-sub {
   margin-top: 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--dim);
   white-space: nowrap;
   overflow: hidden;
@@ -1330,23 +1259,19 @@ button {
 }
 
 .ping-cell .p-label {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--dim);
 }
 
 .ping-cell .p-val {
   font-size: 15px;
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .ping-cell .p-loss {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--dim);
   min-height: 15px;
-}
-
-.ping-cell.good .p-val {
-  color: var(--ok);
 }
 
 .ping-cell.mid .p-val {
@@ -1364,7 +1289,7 @@ button {
 }
 
 .ip-badge {
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 10px;
   border-radius: 7px;
   border: 1px solid var(--border);
@@ -1389,7 +1314,7 @@ button {
 
 .charts-title {
   font-size: 15px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .charts-title::before {
@@ -1492,7 +1417,7 @@ button {
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   padding: 8px 11px;
-  font-size: 11.5px;
+  font-size: 12px;
   pointer-events: none;
   box-shadow: var(--shadow);
 }
@@ -1598,7 +1523,7 @@ html[data-theme="light"] .chart-tip {
 .state-title {
   font-size: 16px;
   color: var(--text);
-  font-weight: 620;
+  font-weight: 600;
 }
 
 .state-desc {
@@ -1648,7 +1573,7 @@ html[data-theme="light"] .chart-tip {
 
 .probe-dialog-title {
   font-size: 17px;
-  font-weight: 660;
+  font-weight: 700;
   margin-bottom: 8px;
 }
 
@@ -1694,8 +1619,13 @@ html[data-theme="light"] .chart-tip {
   transform: translate(-50%, 0);
 }
 
-/* ================= 页脚 ================= */
+/* 深色模式滚动条：默认白条在深色底上太突兀 */
+html[data-theme="dark"] * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
 
+/* ================= 页脚 ================= */
 .site-footer {
   border-top: 1px solid var(--border);
   padding: 16px 26px 22px;
