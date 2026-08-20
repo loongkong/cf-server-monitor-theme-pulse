@@ -572,6 +572,8 @@ button {
   display: block;
   overflow: hidden;
   white-space: nowrap;
+  /* 空行也保留行高：第二 meta 行（价格/到期/流量包）缺失时卡片高度一致 */
+  min-height: 21px;
 }
 
 .mq-track {
@@ -730,7 +732,6 @@ button {
   display: flex;
   align-items: center;
   gap: 22px;
-  padding-right: 16px;
   font-size: 12px;
   color: var(--dim);
 }
@@ -754,11 +755,21 @@ button {
   min-width: 0;
 }
 
+.ld-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.ld-lb {
+  font-size: 10px;
+  color: var(--dim);
+}
 .ld-val {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  flex: 1;
   min-width: 0;
 }
 
@@ -772,16 +783,25 @@ button {
   color: var(--bad);
 }
 
+/* 网络/流量行两项按 4:3 分布，上行值贴近右缘但留余量 */
 .net-item {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1;
+  flex: 4;
   min-width: 0;
 }
+.net-item:last-child {
+  flex: 3;
+}
+/* 下行值右挪 3 字符，与上行值拉开间距 */
+.net-item:first-child {
+  margin-left: 3ch;
+}
 
+/* 与负载值同款数字样式（12px / 600 / mono） */
 .net-item b {
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text);
 }
 
@@ -830,12 +850,145 @@ button {
   color: var(--text);
 }
 
+.pp-val.low {
+  color: var(--accent-2);
+}
+
 .pp-val.mid {
   color: var(--warn);
 }
 
 .pp-val.bad {
   color: var(--bad);
+}
+
+/* ---------- 三网详情面板（show_three_net_details，对齐官方 2.8.4） ----------
+   左列 Ping / 右列丢包 × 电信/联通/移动三行，每行 30 个微桶，悬浮出 tooltip */
+
+.tn-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.tn-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tn-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tn-vals {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.tn-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tn-val {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.tn-val.low {
+  color: var(--accent-2);
+}
+
+.tn-val.mid {
+  color: var(--warn);
+}
+
+.tn-val.bad {
+  color: var(--bad);
+}
+
+.tn-buckets {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+  min-width: 0;
+  overflow: visible;
+}
+
+.tn-bucket {
+  position: relative;
+  display: inline-flex;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  align-items: flex-end;
+  z-index: 1;
+}
+
+/* 悬浮整行压暗，单桶放大高亮（对齐官方交互） */
+.tn-buckets:hover .tn-fill {
+  opacity: 0.34 !important;
+}
+
+.tn-fill {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+  border-radius: 2px;
+  transform-origin: bottom center;
+  transition:
+    opacity 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.tn-bucket:hover {
+  z-index: 20;
+}
+
+.tn-bucket:hover .tn-fill {
+  opacity: 1 !important;
+  transform: scaleY(1.28);
+  filter: saturate(1.2) brightness(1.08);
+  box-shadow: 0 0 8px currentColor;
+}
+
+/* 悬浮 tooltip：JS 驱动、fixed 定位挂 body（卡片 overflow:hidden 会裁剪伪元素浮层） */
+.tn-tip {
+  position: fixed;
+  z-index: 90;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* IP 徽章：中性灰（可达只是状态，不是异常提示，不再用主题色） */
@@ -855,6 +1008,11 @@ button {
 .ping-chip .ico {
   width: 11px;
   height: 11px;
+}
+
+.ping-chip.low {
+  color: var(--accent-2);
+  border-color: color-mix(in srgb, var(--accent-2) 35%, transparent);
 }
 
 .ping-chip.mid {
@@ -965,7 +1123,7 @@ button {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  min-width: 1216px;
+  min-width: 1332px;
   table-layout: fixed;
 }
 
@@ -999,10 +1157,11 @@ button {
 .srv-table th:nth-child(3),
 .srv-table th:nth-child(4),
 .srv-table th:nth-child(5) { width: 120px; }
-.srv-table th:nth-child(6),
-.srv-table th:nth-child(7) { width: 112px; }
-.srv-table th:nth-child(8) { width: 104px; }
-.srv-table th:nth-child(9) { width: 260px; }
+.srv-table th:nth-child(6) { width: 116px; }
+.srv-table th:nth-child(7),
+.srv-table th:nth-child(8) { width: 112px; }
+.srv-table th:nth-child(9) { width: 104px; }
+.srv-table th:nth-child(10) { width: 260px; }
 
 .srv-table tbody tr {
   cursor: pointer;
@@ -1046,7 +1205,7 @@ button {
 .mini-val {
   font-size: 12px;
   min-width: 42px;
-  text-align: right;
+  text-align: left;
 }
 
 .mini-bar {
@@ -1272,6 +1431,10 @@ button {
   font-size: 11px;
   color: var(--dim);
   min-height: 15px;
+}
+
+.ping-cell.low .p-val {
+  color: var(--accent-2);
 }
 
 .ping-cell.mid .p-val {
@@ -1588,6 +1751,27 @@ html[data-theme="light"] .chart-tip {
   font-size: 12px;
   color: var(--bad);
   min-height: 18px;
+}
+
+.probe-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.probe-dialog-actions .btn {
+  margin-top: 0;
+}
+
+.btn-ghost {
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--dim);
+}
+
+.btn-ghost:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .ts-holder {

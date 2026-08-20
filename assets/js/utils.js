@@ -195,10 +195,23 @@ export function pingState(v) {
   return n == null ? { kind: 'none', value: null } : { kind: 'ok', value: n };
 }
 
-// 阈值对齐官方主题：good <100ms，mid <200ms，bad ≥200ms
+// 阈值对齐官方 2.8.4：good <80ms，low <160ms，mid <240ms，bad ≥240ms
 export function pingClass(ms) {
   if (ms == null) return '';
-  return ms < 100 ? 'good' : ms < 200 ? 'mid' : 'bad';
+  return ms < 80 ? 'good' : ms < 160 ? 'low' : ms < 240 ? 'mid' : 'bad';
+}
+
+/** 连接数等计数格式化：千分位，非法/负数归 0（对齐官方 formatCount） */
+export function fmtCount(v) {
+  const n = Number.parseInt(v, 10);
+  if (!Number.isFinite(n) || n < 0) return '0';
+  return n.toLocaleString('en-US');
+}
+
+/** 前端 WSS 超时（分钟）：0-1440 整数，其余归 0（对齐官方 normalizeLiveSocketTimeoutMinutes） */
+export function normalizeWsTimeoutMinutes(v) {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= 1440 ? n : 0;
 }
 
 export function avgPing(s) {
@@ -506,9 +519,47 @@ export function toast(msg) {
   }, 3200);
 }
 
+/** 实时连接超时确认弹窗（对齐官方 LiveConnectionTimeoutModal）：
+ *  WS 达到站点配置的前端超时后由视图弹出；关闭 = 不再重连，继续 = 立即重连 */
+export function wsTimeoutDialog({ onClose, onContinue }) {
+  const overlay = el(
+    'div',
+    { class: 'probe-overlay', style: { display: 'none' } },
+    el(
+      'div',
+      { class: 'probe-dialog', role: 'dialog', 'aria-modal': 'true' },
+      el('div', { class: 'probe-dialog-title', text: '实时连接已超时' }),
+      el('p', {
+        class: 'probe-dialog-desc',
+        text: '实时连接已达到时限并断开，是否继续接收实时更新？',
+      }),
+      el(
+        'div',
+        { class: 'probe-dialog-actions' },
+        el('button', { class: 'btn btn-ghost', onClick: () => { hide(); onClose && onClose(); } }, '关闭'),
+        el('button', { class: 'btn', onClick: () => { hide(); onContinue && onContinue(); } }, '继续'),
+      ),
+    ),
+  );
+  (document.getElementById('overlay-root') || document.body).append(overlay);
+  function show() {
+    overlay.style.display = '';
+  }
+  function hide() {
+    overlay.style.display = 'none';
+  }
+  return {
+    show,
+    hide,
+    isOpen: () => overlay.style.display !== 'none',
+    destroy() {
+      overlay.remove();
+    },
+  };
+}
+
 /** 空状态 / 错误状态块 */
-export function stateBlock({ icon = 'empty', title, desc, actionText, onAction }) {
-  const icons = {
+export function stateBlock({ icon = 'empty', title, desc, actionText, onAction }) {  const icons = {
     empty: 'M20 7H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2ZM2 11h20M7 15h4',
     lock: 'M7 11V7a5 5 0 0 1 10 0v4M5 11h14v10H5V11Zm7 4v2',
     err: 'M12 8v5m0 3.5v.5M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z',

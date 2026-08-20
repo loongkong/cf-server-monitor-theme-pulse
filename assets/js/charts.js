@@ -4,7 +4,7 @@
 // - ResizeObserver 自适应宽度
 // - append() 支持实时追加数据点并按窗口裁剪
 
-import {el, fmtDateTime, fmtTimeShort, serverNow, svg} from './utils.js?v=1.1.2';
+import {el, fmtDateTime, fmtTimeShort, serverNow, svg} from './utils.js?v=1.2.0';
 
 let chartUid = 0;
 

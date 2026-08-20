@@ -10,12 +10,15 @@ import {
   flagImg,
   fmtBytes,
   fmtClock,
+  fmtCount,
   fmtMB,
   fmtSpeed,
+  fmtTimeShort,
   fmtUptime,
   icon,
   ipReachable,
   isOnline,
+  normalizeWsTimeoutMinutes,
   num,
   osIconImg,
   osName,
@@ -31,10 +34,11 @@ import {
   timeAgo,
   updateFlagImg,
   updateOsIconImg,
-} from '../utils.js?v=1.1.2';
-import {getServers} from '../api.js?v=1.1.2';
-import {Playback, normalizeTs} from '../playback.js?v=1.1.2';
-import {MetricSocket} from '../ws.js?v=1.1.2';
+  wsTimeoutDialog,
+} from '../utils.js?v=1.2.0';
+import {getServers} from '../api.js?v=1.2.0';
+import {Playback, normalizeTs} from '../playback.js?v=1.2.0';
+import {MetricSocket} from '../ws.js?v=1.2.0';
 
 const MODE_LABELS = { bar: '条形', ring: '圆环', table: '表格' };
 
@@ -289,10 +293,14 @@ function setLive(repEl, smpWrap, smpText, lagEl, d) {
   smpWrap.style.visibility = has ? '' : 'hidden';
 }
 
-// 负载显示：1m/5m/15m 三个值 + 按核心数颜色分级
+// 负载显示：1m/5m/15m 分钟标签 + 值 + 按核心数颜色分级
 function loadDisplay() {
-  const spans = Array.from({ length: 3 }, () => el('span', { class: 'ld-val mono', text: '—' }));
-  const box = el('span', { class: 'load-box' }, spans);
+  const items = ['1m', '5m', '15m'].map((lb) => {
+    const v = el('span', { class: 'ld-val mono', text: '—' });
+    const item = el('span', { class: 'ld-item' }, el('span', { class: 'ld-lb', text: lb }), v);
+    return { item, v };
+  });
+  const box = el('span', { class: 'load-box' }, items.map((i) => i.item));
   return {
     el: box,
     update(d) {
@@ -300,7 +308,8 @@ function loadDisplay() {
       const cores = num(d.cpu_cores) || 0;
       for (let i = 0; i < 3; i += 1) {
         const v = Number.isFinite(parts[i]) ? parts[i] : null;
-        spans[i].textContent = v == null ? '—' : v.toFixed(2);
+        const valEl = items[i].v;
+        valEl.textContent = v == null ? '—' : v.toFixed(2);
         // 按 load/cores 比值分级：<0.7 绿 / <1.0 黄 / ≥1.0 红
         let cls = '';
         if (v != null && cores > 0) {
@@ -309,7 +318,7 @@ function loadDisplay() {
         } else if (v != null) {
           cls = v >= 2 ? 'bad' : v >= 1 ? 'mid' : 'good';
         }
-        spans[i].className = `ld-val mono${cls ? ` ${cls}` : ''}`;
+        valEl.className = `ld-val mono${cls ? ` ${cls}` : ''}`;
       }
     },
   };
@@ -322,6 +331,214 @@ const PING_CARRIERS = [
   { key: 'cm', label: '移动' },
   { key: 'bd', label: 'BGP' },
 ];
+
+// ---------- 三网详情面板（站点开关 show_three_net_details，对齐官方 2.8.4） ----------
+// 数据：server.ping / server.loss 时序数组 [{ts, ct, cu, cm, bd}]（ts 秒/毫秒兼容），
+// 初始由后端窗口缓存下发，实时样本到达时在本地追加（对齐后端 buildLatencyPointFromMetrics）。
+// 布局：2×2 四宫格（电信/联通/移动/BGP），每格只画丢包率 30 桶；
+// 行头 左侧名称、右侧实时延迟，tooltip 合并展示 时间 · 延迟 · 丢包率。
+
+const TN_CARRIERS = PING_CARRIERS;
+const TN_BUCKETS = 30;
+// 条带三级色：绿(正常) → 黄(关注) → 红(异常)
+const TN_STRIP_COLORS = ['var(--ok)', 'var(--warn)', 'var(--bad)'];
+// 延迟三档（好/低并档为绿）：用于历史点与当前点的等级比较
+const tnPingLevel = (v) => (pingClass(v) === 'bad' ? 2 : pingClass(v) === 'mid' ? 1 : 0);
+// 丢包三档：0% 绿 / <20% 黄 / ≥20% 红
+const tnLossLevel = (v) => (v <= 0 ? 0 : v < 20 ? 1 : 2);
+
+/** 提取某运营商的时序：过滤非法点、统一 ts 为毫秒、按时间排序 */
+function tnSeries(d, name, key) {
+  const src = Array.isArray(d[name]) ? d[name] : [];
+  const out = [];
+  for (const p of src) {
+    if (!p || typeof p !== 'object') continue;
+    let ts = Number(p.ts ?? p.timestamp);
+    if (!Number.isFinite(ts) || ts <= 0) continue;
+    if (ts < 10_000_000_000) ts *= 1000;
+    out.push({ ts, value: num(p[key]) });
+  }
+  out.sort((a, b) => a.ts - b.ts);
+  return out;
+}
+
+function hasTnSeries(d) {
+  return TN_CARRIERS.some(
+    (c) => tnSeries(d, 'ping', c.key).length || tnSeries(d, 'loss', c.key).length,
+  );
+}
+
+/** 实时样本应用到卡片数据后，把 ping/loss 采样点并入时序（保持最近 30 点）。
+ *  对齐后端 MetricsBroadcaster 桶语义：ts 向下取整到 2 分钟桶，
+ *  同桶覆盖、新桶追加——条带密度与后端窗口一致（2 分钟/桶，共 60 分钟窗口） */
+const TN_BUCKET_MS = 2 * 60 * 1000;
+
+function appendLatencyPoints(d, ts, data) {
+  if (!ts) return;
+  const bucketTs = Math.floor(ts / TN_BUCKET_MS) * TN_BUCKET_MS;
+  for (const name of ['ping', 'loss']) {
+    const point = { ts: bucketTs };
+    let has = false;
+    for (const c of ['ct', 'cu', 'cm', 'bd']) {
+      const v = num(data[`${name}_${c}`]);
+      if (v != null) {
+        point[c] = v;
+        has = true;
+      }
+    }
+    if (!has) continue;
+    const series = (Array.isArray(d[name]) ? d[name] : []).map((p) => {
+      let pts = Number(p && (p.ts ?? p.timestamp));
+      if (Number.isFinite(pts) && pts > 0 && pts < 10_000_000_000) pts *= 1000;
+      return { ...p, ts: pts };
+    });
+    const existing = series.findIndex((p) => p.ts === bucketTs);
+    if (existing >= 0) series[existing] = { ...series[existing], ...point };
+    else series.push(point);
+    series.sort((a, b) => a.ts - b.ts);
+    d[name] = series.slice(-TN_BUCKETS);
+  }
+}
+
+const trimFixed = (v, digits = 1) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  return n.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+};
+
+// 悬浮 tooltip：挂 body、fixed 定位——卡片 overflow:hidden 会裁剪 CSS 伪元素浮层
+let tnTip = null;
+
+function getTnTip() {
+  if (!tnTip) {
+    tnTip = el('div', { class: 'tn-tip', role: 'tooltip' });
+    tnTip.style.display = 'none';
+    document.body.append(tnTip);
+  }
+  return tnTip;
+}
+
+function showTnTip(bucket) {
+  const text = bucket.getAttribute('data-tooltip');
+  if (!text) return;
+  const tip = getTnTip();
+  tip.textContent = text;
+  tip.style.display = '';
+  const r = bucket.getBoundingClientRect();
+  const tw = tip.offsetWidth;
+  const th = tip.offsetHeight;
+  // 水平居中于桶，压到视口内；卡片顶部放不下时翻转到桶下方
+  const x = Math.max(8, Math.min(window.innerWidth - tw - 8, r.left + r.width / 2 - tw / 2));
+  let y = r.top - th - 8;
+  if (y < 8) y = r.bottom + 8;
+  tip.style.left = `${x}px`;
+  tip.style.top = `${y}px`;
+}
+
+function hideTnTip() {
+  if (tnTip) tnTip.style.display = 'none';
+}
+
+function threeNetPanel() {
+  // 2×2 四宫格：每格一个运营商，只画丢包率桶条；
+  // 行头左侧名称、右侧实时延迟+丢包（语意同 pingPanel，取实时标量字段）；
+  // tooltip 合并展示 时间 · 延迟 · 丢包率
+  const cells = TN_CARRIERS.map((c) => {
+    const pingVal = el('b', { class: 'tn-val mono', text: '—' });
+    const head = el(
+      'div',
+      { class: 'tn-head' },
+      el('span', { class: 'tn-name', text: c.label }),
+      el('span', { class: 'tn-vals' }, pingVal),
+    );
+    const fills = Array.from({ length: TN_BUCKETS }, () => {
+      const fill = el('i', { class: 'tn-fill' });
+      const bucket = el('span', { class: 'tn-bucket' }, fill);
+      bucket.addEventListener('mouseenter', () => showTnTip(bucket));
+      bucket.addEventListener('mouseleave', hideTnTip);
+      return { bucket, fill };
+    });
+    const buckets = el('div', { class: 'tn-buckets' }, fills.map((f) => f.bucket));
+    const cell = el('div', { class: 'tn-cell' }, head, buckets);
+    return { key: c.key, cell, pingVal, fills, sig: '' };
+  });
+  const panel = el('div', { class: 'tn-panel' }, cells.map((c) => c.cell));
+  panel.style.display = 'none';
+
+  function paintBucket({ bucket, fill }, { color, height, opacity, tooltip }) {
+    fill.style.background = color;
+    fill.style.height = `${height}%`;
+    fill.style.opacity = String(opacity);
+    if (tooltip) bucket.setAttribute('data-tooltip', tooltip);
+    else bucket.removeAttribute('data-tooltip');
+  }
+
+  return {
+    el: panel,
+    update(d) {
+      for (const cell of cells) {
+        const pingS = tnSeries(d, 'ping', cell.key);
+        const lossS = tnSeries(d, 'loss', cell.key);
+        // 行头：实时延迟（同 pingPanel 语意）；禁用该节点的服务器隐藏整格
+        const pv = pingState(d[`ping_${cell.key}`]);
+        cell.cell.style.display = pv.kind === 'disabled' ? 'none' : '';
+        cell.pingVal.textContent = pv.kind === 'ok' ? `${pv.value.toFixed(0)}ms` : '—';
+        cell.pingVal.className = `tn-val mono${pv.kind === 'ok' ? ` ${pingClass(pv.value)}` : ''}`;
+        // 当前延迟等级：历史点比当前差时，桶色在丢包等级基础上加深一档（绿→黄→红）
+        const curLevel = pv.kind === 'ok' ? tnPingLevel(pv.value) : null;
+        // 签名：两个序列的最新点 ts；不变则跳过 30 桶重绘（每秒 tick 省 DOM 写）
+        const sig = `${pingS.length ? pingS[pingS.length - 1].ts : 0}:${lossS.length ? lossS[lossS.length - 1].ts : 0}`;
+        if (sig === cell.sig) continue;
+        cell.sig = sig;
+        // 按 2 分钟桶位渲染（对齐后端固定窗口语义）：窗口 = 最新样本所在桶往前 30 桶；
+        // 点 ts 一律向下取整到桶边界（后端窗口点已对齐，但「最新点」保留原始样本 ts）；
+        // 窗口内无点的桶位显示「无样本」，早于首个样本的桶位显示为占位空桶
+        const pingByTs = new Map(
+          pingS.map((p) => [Math.floor(p.ts / TN_BUCKET_MS) * TN_BUCKET_MS, p]),
+        );
+        const lossByTs = new Map(
+          lossS.map((p) => [Math.floor(p.ts / TN_BUCKET_MS) * TN_BUCKET_MS, p]),
+        );
+        const allTs = [...pingS, ...lossS].map((p) => p.ts);
+        const lastBucket = allTs.length
+          ? Math.floor(Math.max(...allTs) / TN_BUCKET_MS) * TN_BUCKET_MS
+          : 0;
+        const firstBucket = allTs.length
+          ? Math.floor(Math.min(...allTs) / TN_BUCKET_MS) * TN_BUCKET_MS
+          : 0;
+        for (let i = 0; i < TN_BUCKETS; i += 1) {
+          if (!lastBucket) {
+            paintBucket(cell.fills[i], { color: 'var(--border)', height: 25, opacity: 0.25, tooltip: '' });
+            continue;
+          }
+          const slotTs = lastBucket - (TN_BUCKETS - 1 - i) * TN_BUCKET_MS;
+          if (slotTs < firstBucket) {
+            paintBucket(cell.fills[i], { color: 'var(--border)', height: 25, opacity: 0.25, tooltip: '' });
+            continue;
+          }
+          const pp = pingByTs.get(slotTs);
+          const lp = lossByTs.get(slotTs);
+          const hasP = !!(pp && pp.value != null && pp.value >= 0);
+          const hasL = !!(lp && lp.value != null);
+          const parts = [fmtTimeShort(slotTs)];
+          parts.push(hasP ? `${trimFixed(pp.value)} ms` : '无样本');
+          if (hasL) parts.push(`丢包 ${trimFixed(lp.value)}%`);
+          // 基础色 = 丢包等级（绿/黄/红）；该时间点延迟等级比当前差 → 加深一档（红保持）
+          let level = hasL ? tnLossLevel(lp.value) : null;
+          if (level != null && hasP && curLevel != null && tnPingLevel(pp.value) > curLevel) {
+            level = Math.min(2, level + 1);
+          }
+          paintBucket(cell.fills[i], {
+            color: level == null ? 'var(--border)' : TN_STRIP_COLORS[level],
+            height: 84,
+            opacity: hasL ? 0.94 : 0.42,
+            tooltip: parts.join(' · '),
+          });
+        }
+      }
+    },
+  };
+}
 
 function pingPanel() {
   const items = PING_CARRIERS.map((c) => {
@@ -412,6 +629,7 @@ function barCard(s, sysConfig) {
   const trfDownV = el('b', { class: 'mono' });
   const trfUpV = el('b', { class: 'mono' });
   const pings = pingPanel();
+  const tn = threeNetPanel();
   const liveRep = el('span', { class: 'bt-item mono' });
   const liveSmpText = document.createTextNode('');
   const liveLag = el('span', { class: 'bt-lag' });
@@ -448,6 +666,7 @@ function barCard(s, sysConfig) {
     el('div', { class: 'srv-meters' }, cpu.el, ram.el, disk.el),
     infoBox,
     pings.el,
+    tn.el,
     el('div', { class: 'srv-bottom' }, up, liveRep, liveSmp),
   );
 
@@ -521,7 +740,9 @@ function barCard(s, sysConfig) {
     } else {
       tfChip.style.display = 'none';
     }
-    meta2.el.style.display = pr || days != null || tfLimit ? '' : 'none';
+    // 第二行（价格/到期/流量包）为空时保留占位：visibility 隐藏而非撤掉，
+    // 卡片高度不因计费信息缺失而缩水，同组卡片底边对齐
+    meta2.el.style.visibility = pr || days != null || tfLimit ? '' : 'hidden';
 
     tagsBox.textContent = '';
     String(d.tags || '')
@@ -552,7 +773,16 @@ function barCard(s, sysConfig) {
     upText.textContent = fmtUptime(d.boot_time);
     lastSeen.textContent = online ? '' : timeAgo(d.last_updated);
 
-    pings.update(d);
+    // 三网详情（站点开关）：有序列数据时替换 ping 分项面板
+    const tnOn = sysConfig.show_three_net_details && hasTnSeries(d);
+    if (tnOn) {
+      pings.el.style.display = 'none';
+      tn.el.style.display = '';
+      tn.update(d);
+    } else {
+      tn.el.style.display = 'none';
+      pings.update(d);
+    }
     setLive(liveRep, liveSmp, liveSmpText, liveLag, d);
     meta1.fit();
     meta2.fit();
@@ -630,6 +860,7 @@ function ringCard(s, sysConfig) {
   const trfDownV = el('b', { class: 'mono' });
   const trfUpV = el('b', { class: 'mono' });
   const pings = pingPanel();
+  const tn = threeNetPanel();
   const liveRep = el('span', { class: 'bt-item mono' });
   const liveSmpText = document.createTextNode('');
   const liveLag = el('span', { class: 'bt-lag' });
@@ -672,6 +903,7 @@ function ringCard(s, sysConfig) {
     ),
     infoBox,
     pings.el,
+    tn.el,
     el('div', { class: 'srv-bottom' }, up, liveRep, liveSmp),
   );
 
@@ -744,7 +976,9 @@ function ringCard(s, sysConfig) {
     } else {
       tfChip.style.display = 'none';
     }
-    meta2.el.style.display = pr || days != null || tfLimit ? '' : 'none';
+    // 第二行（价格/到期/流量包）为空时保留占位：visibility 隐藏而非撤掉，
+    // 卡片高度不因计费信息缺失而缩水，同组卡片底边对齐
+    meta2.el.style.visibility = pr || days != null || tfLimit ? '' : 'hidden';
 
     tagsBox.textContent = '';
     String(d.tags || '')
@@ -771,7 +1005,16 @@ function ringCard(s, sysConfig) {
     upText.textContent = fmtUptime(d.boot_time);
     lastSeen.textContent = online ? '' : timeAgo(d.last_updated);
 
-    pings.update(d);
+    // 三网详情（站点开关）：有序列数据时替换 ping 分项面板
+    const tnOn = sysConfig.show_three_net_details && hasTnSeries(d);
+    if (tnOn) {
+      pings.el.style.display = 'none';
+      tn.el.style.display = '';
+      tn.update(d);
+    } else {
+      tn.el.style.display = 'none';
+      pings.update(d);
+    }
     setLive(liveRep, liveSmp, liveSmpText, liveLag, d);
     meta1.fit();
     meta2.fit();
@@ -812,6 +1055,7 @@ function tableRow(s) {
   const cpu = miniCell();
   const ram = miniCell();
   const disk = miniCell();
+  const connEl = el('span', { class: 'mono t-conn', title: 'TCP / UDP' });
   const downEl = el('span', { class: 'mono' });
   const upEl = el('span', { class: 'mono' });
   const pingText = document.createTextNode('—');
@@ -827,6 +1071,7 @@ function tableRow(s) {
     el('td', {}, cpu.el),
     el('td', {}, ram.el),
     el('td', {}, disk.el),
+    el('td', {}, connEl),
     el('td', {}, downEl),
     el('td', {}, upEl),
     el('td', {}, pingEl),
@@ -854,6 +1099,7 @@ function tableRow(s) {
     cpu.set(num(d.cpu));
     ram.set(pct(d.ram_used, d.ram_total));
     disk.set(pct(d.disk_used, d.disk_total));
+    connEl.textContent = `${fmtCount(d.tcp_conn)} / ${fmtCount(d.udp_conn)}`;
     downEl.textContent = fmtSpeed(d.net_in_speed);
     upEl.textContent = fmtSpeed(d.net_out_speed);
     const ap = avgPing(d);
@@ -887,7 +1133,7 @@ function tableCard(list) {
         el(
           'tr',
           {},
-          ['服务器', '地区', 'CPU', '内存', '磁盘', 'down', 'up', '延迟', '时长'].map((h) =>
+          ['服务器', '地区', 'CPU', '内存', '磁盘', 'TCP/UDP', 'down', 'up', '延迟', '时长'].map((h) =>
             h === 'down' || h === 'up' ? el('th', {}, arrowIcon(h)) : el('th', { text: h }),
           ),
         ),
@@ -1203,6 +1449,8 @@ export async function renderHome(root, ctx) {
       const cur = dataMap.get(serverId);
       if (!cur) return;
       Object.assign(cur, data);
+      // 三网时序本地追加（对齐后端窗口缓存行为，桶图随实时样本滚动）
+      appendLatencyPoints(cur, ts, data);
       // 在线判定使用批次上报时间（对齐官方 last_updated = report_timestamp）：
       // 回放过期缓存批次时服务器按真实上报时间离线，而非回放期间"假在线"
       cur.last_updated = meta && meta.reportTs ? meta.reportTs : serverNow();
@@ -1256,9 +1504,19 @@ export async function renderHome(root, ctx) {
 
   playback.start();
 
-  const socket = new MetricSocket({
+  // 前端 WSS 超时（站点配置 frontend_ws_timeout_minutes，0 = 不超时）：
+  // 到期断开并弹确认框——关闭则不再重连，继续则立即重连
+  let socket = null;
+  const wsTimeout = wsTimeoutDialog({
+    onClose: () => socket && socket.close(),
+    onContinue: () => socket && socket.reconnect(),
+  });
+
+  socket = new MetricSocket({
     scope: 'all',
     ids: [...dataMap.keys()],
+    timeoutMinutes: normalizeWsTimeoutMinutes(ctx.config && ctx.config.frontend_ws_timeout_minutes),
+    onTimeout: () => wsTimeout.show(),
     onState: ctx.setWsState,
     onBatch(msg) {
       for (const u of msg.updates || []) {
@@ -1271,6 +1529,7 @@ export async function renderHome(root, ctx) {
     destroy() {
       playback.destroy();
       socket.close();
+      wsTimeout.destroy();
     },
   };
 }

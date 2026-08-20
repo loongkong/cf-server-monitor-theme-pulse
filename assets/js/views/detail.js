@@ -16,6 +16,7 @@ import {
   icon,
   ipReachable,
   isOnline,
+  normalizeWsTimeoutMinutes,
   num,
   osIconImg,
   parseGPU,
@@ -32,11 +33,12 @@ import {
   toast,
   updateFlagImg,
   updateOsIconImg,
-} from '../utils.js?v=1.1.2';
-import {getAuthToken, getHistory, getServer, getServers} from '../api.js?v=1.1.2';
-import {Playback, normalizeTs} from '../playback.js?v=1.1.2';
-import {MetricSocket} from '../ws.js?v=1.1.2';
-import {LineChart} from '../charts.js?v=1.1.2';
+  wsTimeoutDialog,
+} from '../utils.js?v=1.2.0';
+import {getAuthToken, getHistory, getServer, getServers} from '../api.js?v=1.2.0';
+import {Playback, normalizeTs} from '../playback.js?v=1.2.0';
+import {MetricSocket} from '../ws.js?v=1.2.0';
+import {LineChart} from '../charts.js?v=1.2.0';
 
 const COLORS = {
   teal: '#2dd4bf',
@@ -692,8 +694,17 @@ export async function renderDetail(root, ctx, id) {
   }
   playback.start();
 
-  const socket = new MetricSocket({
+  // 前端 WSS 超时（站点配置 frontend_ws_timeout_minutes，0 = 不超时）
+  let socket = null;
+  const wsTimeout = wsTimeoutDialog({
+    onClose: () => socket && socket.close(),
+    onContinue: () => socket && socket.reconnect(),
+  });
+
+  socket = new MetricSocket({
     scope: id,
+    timeoutMinutes: normalizeWsTimeoutMinutes(ctx.config && ctx.config.frontend_ws_timeout_minutes),
+    onTimeout: () => wsTimeout.show(),
     onState: ctx.setWsState,
     onBatch(msg) {
       for (const u of msg.updates || []) {
@@ -706,6 +717,7 @@ export async function renderDetail(root, ctx, id) {
     destroy() {
       playback.destroy();
       socket.close();
+      wsTimeout.destroy();
       for (const chart of Object.values(charts)) chart.destroy();
     },
   };
